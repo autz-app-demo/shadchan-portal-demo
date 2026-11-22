@@ -37,7 +37,22 @@ async function storeClear(n) { const db = await openDB(); return reqP(db.transac
 async function ensureSeed() {
   const existing = await storeAll('profiles');
   if (!existing || existing.length === 0) {
-    for (const p of SEED_PROFILES) await storePut('profiles', Object.assign({}, p));
+    for (const p of SEED_PROFILES) {
+      const cp = Object.assign({}, p);
+      if (window.SEED_PORTRAITS && window.SEED_PORTRAITS[cp.id]) cp.photo = window.SEED_PORTRAITS[cp.id];
+      await storePut('profiles', cp);
+    }
+    return;
+  }
+  // Backfill illustrated demo portraits onto seed profiles that have no
+  // user-chosen photo yet. Never touches a photo anyone added themselves.
+  if (window.SEED_PORTRAITS) {
+    for (const p of existing) {
+      if (!p.photo && window.SEED_PORTRAITS[p.id]) {
+        p.photo = window.SEED_PORTRAITS[p.id];
+        await storePut('profiles', p);
+      }
+    }
   }
 }
 
@@ -220,10 +235,16 @@ window.fbVerdict = function (cid, verdict) {
   fbState[cid].verdict = verdict;
   if (verdict === 'yes') {
     saveFeedback(cid, 'yes', [], '');
+    const el = document.getElementById('fbnote-' + cid);
+    if (el) el.style.display = 'block';
   } else {
     const el = document.getElementById('fbtags-' + cid);
     if (el) el.style.display = 'block';
   }
+};
+window.fbSaveYesNote = function (cid) {
+  const comment = (document.getElementById('fbyn-' + cid) || {}).value || '';
+  saveFeedback(cid, 'yes', [], comment);
 };
 window.fbTag = function (cid, tag) {
   fbState[cid] = fbState[cid] || {};
@@ -275,9 +296,11 @@ window.toggleRec = async function (key) {
   const mr = new MediaRecorder(stream);
   const chunks = [];
   mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  mr.onerror = () => { hideRecBar(key); };
   mr.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
     delete REC[key];
+    hideRecBar(key);
     const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
     if (key === 'ask') {
       window._askAudio = blob;
@@ -288,9 +311,35 @@ window.toggleRec = async function (key) {
   };
   mr.start();
   REC[key] = mr;
+  showRecBar(key);
   const btn = document.getElementById('rec-' + key);
   if (btn) { btn.textContent = 'Stop and save'; btn.classList.add('danger'); }
 };
+
+// Recording bar: visible only while a real MediaRecorder is running.
+// The pulsing dot and timer are driven by actual recorder state, not animation alone.
+function showRecBar(key) {
+  hideRecBar();
+  const bar = document.createElement('div');
+  bar.id = 'recbar';
+  bar.innerHTML = `<span class="recdot"></span><span class="rectext">Recording</span><span class="rectime" id="rectime">0:00</span><button class="recstop" id="recstop">Stop and save</button>`;
+  document.body.appendChild(bar);
+  const started = Date.now();
+  REC._timer = setInterval(() => {
+    if (!REC[key] || REC[key].state !== 'recording') { hideRecBar(); return; }
+    const s = Math.floor((Date.now() - started) / 1000);
+    const el = document.getElementById('rectime');
+    if (el) el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }, 500);
+  document.getElementById('recstop').onclick = () => {
+    if (REC[key]) { try { REC[key].stop(); } catch (e) {} }
+  };
+}
+function hideRecBar() {
+  if (REC._timer) { clearInterval(REC._timer); delete REC._timer; }
+  const bar = document.getElementById('recbar');
+  if (bar) bar.remove();
+}
 
 /* ---------------- views ---------------- */
 async function render() {
@@ -333,15 +382,19 @@ async function viewProfiles() {
       <button class="chip ${_plistFilter === 'boys' ? 'on' : ''}" onclick="plistFilter('boys')">Boys (${profiles.filter(p => p.gender === 'M').length})</button>
       <button class="chip ${_plistFilter === 'girls' ? 'on' : ''}" onclick="plistFilter('girls')">Girls (${profiles.filter(p => p.gender === 'F').length})</button>
     </div>
+    <div class="pgrid">
     ${list.map(p => `
-      <a class="card pcard" href="#/profile/${p.id}">
-        ${avatarHTML(p)}
-        <div class="info">
-          <div class="name">${esc(p.name)}, ${ageFromDob(p.dob)}</div>
-          <div class="sub">${esc(p.location)} &middot; ${esc(p.role || '')}</div>
+      <a class="ptile" href="#/profile/${p.id}">
+        ${p.photo
+          ? `<div class="pphoto" style="background-image:url('${p.photo}')"></div>`
+          : `<div class="pphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
+        <div class="pbody">
+          <div class="pname">${esc(p.name)}, ${ageFromDob(p.dob)}</div>
+          <div class="psub">${esc(p.location)}</div>
           <div class="tagline"><span class="tag">${esc(p.hashkafa)}</span></div>
         </div>
       </a>`).join('') || '<p class="muted">No profiles match.</p>'}
+    </div>
   `;
   document.getElementById('pq').addEventListener('input', e => { _plistQ = e.target.value; viewProfiles(); });
 }
@@ -387,14 +440,16 @@ async function viewForm(editId) {
   }).join('');
   app.innerHTML = `
     <h2>${editId ? 'Edit profile' : 'Add a profile'}</h2>
-    <div class="banner locked">Demo only - do not enter a real person's details, photo, voice, or resume. Real profiles wait until the hosted version with accounts and real privacy protection is ready.</div>
-    <div class="banner info">Basic facts go in the shareable profile. Private notes you add later stay private and are never shared.</div>
+    <p class="small muted" style="margin:0 0 12px">Fictional demo profiles only, please. Basics go in the shareable profile; private notes you add later stay private and are never shared.</p>
     <form id="pform">
-      ${fields}
-      <label class="field">Profile photo (optional)
+      <div class="photopick">
+        <div class="pp-circle ${p.photo ? 'hasimg' : ''}" id="ppcircle" onclick="document.getElementById('fphoto').click()" ${p.photo ? `style="background-image:url('${p.photo}')"` : ''}>
+          ${p.photo ? '' : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8Z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="pp-label">Add photo</span>`}
+        </div>
+        <div class="pp-hint" id="pphint">${p.photo ? 'Tap the photo to change it' : 'Tap to add a profile photo'}</div>
         <input type="file" id="fphoto" accept="image/*">
-      </label>
-      ${p.photo ? `<div class="small muted">A photo is already saved; choosing a new one replaces it.</div>` : ''}
+      </div>
+      ${fields}
       <label class="field">Resume - paste text (optional)
         <textarea name="resumeText" placeholder="Or upload a resume file below">${esc(p.resumeText || '')}</textarea>
       </label>
@@ -411,6 +466,16 @@ async function viewForm(editId) {
       </div>
     </form>
   `;
+  document.getElementById('fphoto').addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const circle = document.getElementById('ppcircle');
+    circle.style.backgroundImage = `url('${url}')`;
+    circle.classList.add('hasimg');
+    circle.innerHTML = '';
+    document.getElementById('pphint').textContent = 'Tap the photo to change it';
+  });
   document.getElementById('pform').addEventListener('submit', async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -456,21 +521,33 @@ async function viewProfile(id) {
   const p = await storeGet('profiles', id);
   if (!p) { location.hash = '#/'; return; }
   const notes = (await storeAll('notes')).filter(n => n.profileId === id).sort((a, b) => b.ts - a.ts);
+  // Saved good ideas for this profile: latest verdict per counterpart wins.
+  const fb = (await storeAll('feedback')).filter(f => f.subjectId === id);
+  const latestByCand = {};
+  for (const f of fb) if (!latestByCand[f.candId] || latestByCand[f.candId].ts < f.ts) latestByCand[f.candId] = f;
+  const goodIds = Object.keys(latestByCand).filter(cid => latestByCand[cid].verdict === 'yes');
+  const goodIdeas = [];
+  for (const cid of goodIds) {
+    const c = await storeGet('profiles', cid);
+    if (c) goodIdeas.push({ c, f: latestByCand[cid] });
+  }
+  goodIdeas.sort((a, b) => b.f.ts - a.f.ts);
   app.innerHTML = `
-    <div class="card">
-      <div style="display:flex;gap:14px;align-items:center">
-        ${avatarHTML(p, 'lg')}
-        <div>
-          <h2 style="margin:0">${esc(p.name)}</h2>
-          <div class="muted small">${p.gender === 'M' ? 'Boy' : 'Girl'} &middot; ${ageFromDob(p.dob) || '?'} years old &middot; ${esc(p.location)}</div>
-          <div class="tagline"><span class="tag">${esc(p.hashkafa || '')}</span>${p.openToRelocate ? '<span class="tag">Open to relocating</span>' : ''}</div>
-        </div>
+    <div class="hero">
+      ${p.photo
+        ? `<div class="hphoto" style="background-image:url('${p.photo}')"></div>`
+        : `<div class="hphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
+      <div class="hoverlay">
+        <div class="hname">${esc(p.name)}</div>
+        <div class="hsub">${p.gender === 'M' ? 'Boy' : 'Girl'} &middot; ${ageFromDob(p.dob) || '?'} years old &middot; ${esc(p.location)}</div>
+        <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span>${p.openToRelocate ? '<span class="htag">Open to relocating</span>' : ''}</div>
       </div>
-      <div class="btnrow no-print">
+    </div>
+    <div class="card">
+      <div class="btnrow no-print" style="margin-top:0">
         <a class="btn" href="#/match/${p.id}">Find ${p.gender === 'M' ? 'girls' : 'boys'} for ${esc(firstName(p))}</a>
         <a class="btn ghost" href="#/share/${p.id}">Share package</a>
       </div>
-    </div>
 
     <div class="card">
       <h3 style="margin-top:0">The basics</h3>
@@ -507,6 +584,21 @@ async function viewProfile(id) {
       ${p.resumeBlob ? `<p><button class="btn ghost" onclick="openResume('${p.id}')">Open saved resume file (${esc(p.resumeName || 'file')})</button></p>` : ''}
       ${!p.resumeText && !p.resumeBlob ? '<p class="muted">No resume yet. Add one through Edit basics.</p>' : ''}
     </div>
+
+    ${goodIdeas.length ? `
+    <div class="card">
+      <h3 style="margin-top:0">Saved good ideas <span class="small muted">(private, never shared)</span></h3>
+      ${goodIdeas.map(({ c, f }) => `
+        <a class="idearow" href="#/profile/${c.id}">
+          ${avatarHTML(c)}
+          <div class="info">
+            <div class="name">${esc(c.name)}, ${ageFromDob(c.dob)}</div>
+            <div class="sub">${esc(c.location)} &middot; ${esc(c.hashkafa || '')}</div>
+            ${f.comment ? `<div class="sub">Your note: ${esc(f.comment)}</div>` : ''}
+            <div class="when muted">Saved ${fmtWhen(f.ts)}</div>
+          </div>
+        </a>`).join('')}
+    </div>` : ''}
 
     <div class="card">
       <h3 style="margin-top:0">Private notes <span class="small muted">(never shared)</span></h3>
@@ -603,6 +695,11 @@ async function viewMatch(id) {
           <div class="btnrow" style="margin:0 0 6px">
             <button class="btn ghost" onclick="fbVerdict('${c.id}','yes')">Good idea</button>
             <button class="btn subtle" onclick="fbVerdict('${c.id}','no')">Not a fit</button>
+          </div>
+          <div id="fbnote-${c.id}" style="display:none">
+            <label class="field small" style="margin:8px 0 4px">A note for yourself about this idea (optional, private)
+              <input type="text" id="fbyn-${c.id}" placeholder="e.g. mention after the Yom Tov"></label>
+            <button class="btn ghost" onclick="fbSaveYesNote('${c.id}')" style="padding:8px 14px;font-size:13.5px">Save note</button>
           </div>
           <div id="fbtags-${c.id}" style="display:none">
             <div class="small muted">Why not? Pick what applies:</div>
@@ -822,7 +919,7 @@ async function viewSettings() {
       <h3 style="margin-top:0">What is real in this demo</h3>
       <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), rule-based match suggestions with reasons, your feedback teaching the matcher, share packages as files.</p>
       <p class="small">Not connected yet: voice-to-text, AI summaries and AI matching, accounts, sharing directly between shadchanim inside the app. Those need the hosted version and are labeled wherever they appear.</p>
-      <p class="small" style="color:var(--danger);font-weight:600">Do not put real people's information in this demo. Local browser storage is not backed up and is not privacy-ready hosting. Real profiles come only with the hosted, account-based version.</p>
+      <p class="small muted">Fictional profiles only in this demo; browser storage has no backup. Real profiles come with the hosted, account-based version.</p>
     </div>
   `;
 }
