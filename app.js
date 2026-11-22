@@ -304,6 +304,10 @@ window.toggleRec = async function (key) {
     const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
     if (key === 'ask') {
       window._askAudio = blob;
+    } else if (key === 'new') {
+      window._newAudio = blob;
+      updateNewAudioWrap();
+      return;
     } else {
       await storePut('notes', { id: uid(), profileId: key, type: 'audio', blob, mime: blob.type, ts: Date.now() });
     }
@@ -344,6 +348,16 @@ function hideRecBar() {
 /* ---------------- views ---------------- */
 async function render() {
   const hash = location.hash || '#/';
+  // Never silently lose a recorded voice note on the Add form: ask before leaving it behind.
+  if (window._newAudio && !hash.startsWith('#/add') && !window._newAudioKeep) {
+    if (confirm('You recorded a voice note that is not saved with a profile yet. Discard it?')) {
+      window._newAudio = null;
+    } else {
+      location.hash = '#/add';
+      return;
+    }
+  }
+  window._newAudioKeep = false;
   const parts = hash.slice(2).split('/');
   const key = parts[0] === 'profile' || parts[0] === 'match' || parts[0] === 'share' ? '' : parts[0];
   setActiveNav(key === 'edit' ? 'add' : key);
@@ -441,7 +455,8 @@ async function viewForm(editId) {
   app.innerHTML = `
     <h2>${editId ? 'Edit profile' : 'Add a profile'}</h2>
     <p class="small muted" style="margin:0 0 12px">Fictional demo profiles only, please. Basics go in the shareable profile; private notes you add later stay private and are never shared.</p>
-    <form id="pform">
+    <form id="pform" novalidate>
+      <div class="banner warn" id="formMissing" style="display:none"></div>
       <div class="photopick">
         <div class="pp-circle ${p.photo ? 'hasimg' : ''}" id="ppcircle" onclick="document.getElementById('fphoto').click()" ${p.photo ? `style="background-image:url('${p.photo}')"` : ''}>
           ${p.photo ? '' : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8Z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="pp-label">Add photo</span>`}
@@ -457,6 +472,12 @@ async function viewForm(editId) {
         <input type="file" id="fresume" accept=".pdf,.doc,.docx,.txt">
       </label>
       ${p.resumeName ? `<div class="small muted">A resume file is saved: ${esc(p.resumeName)}. Choosing a new one replaces it.</div>` : ''}
+      ${!editId ? `
+      <div class="field">
+        <span class="small" style="font-weight:600">Voice note (optional, private)</span>
+        <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. Turning what you say into filled-in fields comes later, with your review first.</div>
+        <div id="newAudioWrap"></div>
+      </div>` : ''}
       <label class="field" style="display:flex;gap:8px;align-items:center">
         <input type="checkbox" name="openToRelocate" ${p.openToRelocate ? 'checked' : ''} style="width:18px;height:18px;margin:0"> Open to relocating
       </label>
@@ -476,9 +497,29 @@ async function viewForm(editId) {
     circle.innerHTML = '';
     document.getElementById('pphint').textContent = 'Tap the photo to change it';
   });
+  updateNewAudioWrap();
   document.getElementById('pform').addEventListener('submit', async e => {
     e.preventDefault();
-    const fd = new FormData(e.target);
+    const form = e.target;
+    // Visible validation: native bubbles are easy to miss on a phone, so name what is missing.
+    const missing = [];
+    for (const [k, label, type, req] of PROFILE_FIELDS) {
+      const el = form.querySelector(`[name="${k}"]`);
+      if (el) el.classList.remove('field-missing');
+      if (!req || !el) continue;
+      const empty = k === 'gender' ? (el.value !== 'M' && el.value !== 'F') : !String(el.value || '').trim();
+      if (empty) { missing.push(label); el.classList.add('field-missing'); }
+    }
+    const missBox = document.getElementById('formMissing');
+    if (missing.length) {
+      missBox.textContent = 'Please fill in before adding: ' + missing.join(', ') + '.';
+      missBox.style.display = '';
+      const first = form.querySelector('.field-missing');
+      if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+    missBox.style.display = 'none';
+    const fd = new FormData(form);
     const prof = editId ? p : { id: uid(), photoColor: '#' + ['0f4c46', '7a3b2e', '274690', '3d6b35', '6b4fa1', '8a5a16'][Math.floor(Math.random() * 6)] };
     for (const [k, , type] of PROFILE_FIELDS) {
       let v = fd.get(k);
@@ -493,10 +534,41 @@ async function viewForm(editId) {
       prof.resumeName = resumeFile.name;
       prof.resumeBlob = resumeFile;
     }
-    await storePut('profiles', prof);
+    try {
+      await storePut('profiles', prof);
+      if (window._newAudio) {
+        await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: window._newAudio, mime: window._newAudio.type, ts: Date.now() });
+        window._newAudio = null;
+        window._newAudioKeep = true;
+      }
+    } catch (err) {
+      missBox.textContent = 'Something went wrong saving. Everything you entered is still on this page - please try again.';
+      missBox.style.display = '';
+      missBox.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
     location.hash = '#/profile/' + prof.id;
   });
 }
+
+function updateNewAudioWrap() {
+  const wrap = document.getElementById('newAudioWrap');
+  if (!wrap) return;
+  wrap.innerHTML = window._newAudio ? `
+    <div class="newaudio">
+      <audio controls id="newAudioPlayer"></audio>
+      <div class="small muted">Recorded - saves with this profile. Discard to re-record.</div>
+      <button type="button" class="btn ghost small" onclick="discardNewAudio()">Discard voice note</button>
+    </div>` : `
+    <button type="button" class="btn ghost" id="rec-new" onclick="toggleRec('new')">Record voice note</button>`;
+  const nap = document.getElementById('newAudioPlayer');
+  if (nap && window._newAudio) nap.src = URL.createObjectURL(window._newAudio);
+}
+
+window.discardNewAudio = function () {
+  window._newAudio = null;
+  updateNewAudioWrap();
+};
 
 function resizePhoto(file) {
   return new Promise((res, rej) => {
