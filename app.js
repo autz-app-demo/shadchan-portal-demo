@@ -387,6 +387,7 @@ async function viewForm(editId) {
   }).join('');
   app.innerHTML = `
     <h2>${editId ? 'Edit profile' : 'Add a profile'}</h2>
+    <div class="banner locked">Demo only - do not enter a real person's details, photo, voice, or resume. Real profiles wait until the hosted version with accounts and real privacy protection is ready.</div>
     <div class="banner info">Basic facts go in the shareable profile. Private notes you add later stay private and are never shared.</div>
     <form id="pform">
       ${fields}
@@ -643,7 +644,7 @@ async function viewAsk() {
   }
   app.innerHTML = `
     <h2>Ask a match</h2>
-    <div class="banner info">Describe someone, even without a profile in the system, and get ideas from the people you have entered.</div>
+    <div class="banner info">Describe someone, even without a profile in the system, and get ideas from the people you have entered. In this demo, describe fictional people only.</div>
     <div class="card">
       <label class="field">I have a
         <select id="askHave">
@@ -821,6 +822,7 @@ async function viewSettings() {
       <h3 style="margin-top:0">What is real in this demo</h3>
       <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), rule-based match suggestions with reasons, your feedback teaching the matcher, share packages as files.</p>
       <p class="small">Not connected yet: voice-to-text, AI summaries and AI matching, accounts, sharing directly between shadchanim inside the app. Those need the hosted version and are labeled wherever they appear.</p>
+      <p class="small" style="color:var(--danger);font-weight:600">Do not put real people's information in this demo. Local browser storage is not backed up and is not privacy-ready hosting. Real profiles come only with the hosted, account-based version.</p>
     </div>
   `;
 }
