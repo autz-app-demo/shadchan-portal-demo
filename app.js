@@ -84,7 +84,7 @@ function initials(name) {
 }
 function avatarHTML(p, cls) {
   const style = p.photo
-    ? `background-image:url("${p.photo}")`
+    ? `background-image:url('${p.photo}')`
     : `background:${p.photoColor || '#0f4c46'}`;
   return `<div class="avatar ${cls || ''}" style="${style}">${p.photo ? '' : esc(initials(p.name))}</div>`;
 }
