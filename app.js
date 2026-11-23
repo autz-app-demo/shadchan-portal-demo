@@ -240,12 +240,9 @@ async function render() {
     if (parts[0] === 'profile') return await viewProfile(parts[1]);
     if (parts[0] === 'add') return await viewForm(null);
     if (parts[0] === 'edit') return await viewForm(parts[1]);
-    if (parts[0] === 'match') return await viewMatch(parts[1]);
-    if (parts[0] === 'ask') { window._findFor = null; window._matchSubject = null; return await viewAsk(); }
-    if (parts[0] === 'requests') return await viewRequests();
-    if (parts[0] === 'request') return await viewRequest(parts[1]);
-    if (parts[0] === 'reply') return await viewReplyPreview(parts[1]);
-    if (parts[0] === 'share') return await viewShare(parts[1]);
+    if (parts[0] === 'match' || parts[0] === 'find' || parts[0] === 'ask') { location.hash = '#/'; return; }
+    if (parts[0] === 'share') return await viewSend(parts[1]);
+    if (parts[0] === 'send' || parts[0] === 'requests') { location.hash = '#/'; return; }
     if (parts[0] === 'settings') return await viewSettings();
     return await viewProfiles();
   } catch (e) {
@@ -288,7 +285,7 @@ async function viewProfiles() {
       <div class="filtergrid">
         <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">Working or learning<select onchange="pfSet('workType',this.value)"><option value="">Any</option>${['Working', 'Learning'].map(o => `<option ${_pf.workType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
-        <div class="field"><span class="flabel">Town</span><div class="townchips"><button type="button" class="chip ${_pf.town === 'In town' ? 'on' : ''}" onclick="pfSet('town', _pf.town === 'In town' ? '' : 'In town')">In town</button><button type="button" class="chip ${_pf.town === 'Out of town' ? 'on' : ''}" onclick="pfSet('town', _pf.town === 'Out of town' ? '' : 'Out of town')">Out of town</button></div></div>
+        <label class="field">In town<select onchange="pfSet('town',this.value)"><option value="">Any</option>${['In town', 'Out of town'].map(o => `<option ${_pf.town === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="pfamin" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(_pf.ageMin)}" oninput="pfAge('ageMin',this.value,'pfamin')"><span>to</span><input id="pfamax" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(_pf.ageMax)}" oninput="pfAge('ageMax',this.value,'pfamax')"></div></div>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
@@ -627,7 +624,6 @@ async function viewProfile(id) {
     <div class="card no-print" id="pgalcard"></div>
     <div class="card">
       <div class="btnrow no-print" style="margin-top:0">
-        ${(p.gender === 'M' || p.gender === 'F') ? `<a class="btn" href="#/match/${p.id}">Find ${p.gender === 'M' ? 'girls' : 'boys'} for ${esc(firstName(p))}</a>` : `<a class="btn ghost" href="#/edit/${p.id}">Set boy or girl to find matches</a>`}
         <a class="btn ghost" href="#/share/${p.id}">Share package</a>
       </div>
 
@@ -665,8 +661,13 @@ async function viewProfile(id) {
     <div class="card">
       <h3 style="margin-top:0">Resume</h3>
       ${p.resumeText ? `<p style="white-space:pre-wrap">${esc(p.resumeText)}</p>` : ''}
-      ${p.resumeBlob ? `<p><button class="btn ghost" onclick="openResume('${p.id}')">Open saved resume file (${esc(p.resumeName || 'file')})</button></p>` : ''}
-      ${!p.resumeText && !p.resumeBlob ? '<p class="muted">No resume yet. Add one through Edit basics.</p>' : ''}
+      ${p.resumeBlob ? resumeViewerHTML(p) : ''}
+      ${!p.resumeText && !p.resumeBlob ? '<p class="muted">No resume yet.</p>' : ''}
+      <div class="btnrow no-print">
+        <label class="btn ghost" style="cursor:pointer">Choose file<input type="file" id="presfile" accept=".pdf,.doc,.docx,.txt,image/*" style="display:none"></label>
+        <label class="btn ghost" style="cursor:pointer">Take a picture<input type="file" id="prescam" accept="image/*" capture="environment" style="display:none"></label>
+      </div>
+      <div class="small muted" id="presmsg">Add or replace the resume. Saved exactly as you attach it, nothing is read or rewritten.${p.resumeBlob ? ' The earlier file is kept.' : ''}</div>
     </div>
 
     ${goodIdeas.length ? `
@@ -707,6 +708,14 @@ async function viewProfile(id) {
       <button class="btn danger" onclick="deleteProfile('${p.id}')">Delete this profile</button>
     </div>
   `;
+  ['presfile', 'prescam'].forEach(i => { const el = document.getElementById(i); if (el) el.addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const cur = await storeGet('profiles', p.id);
+    if (cur.resumeBlob) { cur.resumeHistory = cur.resumeHistory || []; cur.resumeHistory.push({ name: cur.resumeName, blob: cur.resumeBlob, ts: Date.now() }); }
+    cur.resumeBlob = f; cur.resumeName = f.name || 'Resume photo';
+    await storePut('profiles', cur);
+    viewProfile(p.id);
+  }); });
   const gc = document.getElementById('pgalcard');
   if (gc) {
     gc.innerHTML = galControlsHTML();
@@ -737,6 +746,16 @@ window.deleteNote = async function (nid) {
   await storeDel('notes', nid);
   render();
 };
+
+function resumeViewerHTML(p) {
+  const b = p.resumeBlob, t = (b.type || '').toLowerCase(), n = (p.resumeName || '').toLowerCase();
+  const url = URL.createObjectURL(b);
+  const link = `<a class="btn subtle" href="${url}" target="_blank" rel="noopener">Open full size</a>`;
+  if (t.startsWith('image/')) return `<div class="resdoc"><img src="${url}" alt="Resume" style="max-width:100%;border-radius:10px;border:1px solid var(--line)"></div><p>${link}</p>`;
+  if (t === 'application/pdf' || n.endsWith('.pdf')) return `<div class="resdoc"><iframe src="${url}" title="Resume" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe></div><p>${link}</p>`;
+  if (t.startsWith('text/') || n.endsWith('.txt')) return `<div class="resdoc"><iframe src="${url}" title="Resume" style="width:100%;height:50vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe></div><p>${link}</p>`;
+  return `<p class="small muted">This file type (${esc(p.resumeName || 'file')}) cannot be shown inside the page. It is saved unchanged.</p><p><button class="btn ghost" onclick="openResume('${p.id}')">Open the file</button></p>`;
+}
 window.openResume = async function (id) {
   const p = await storeGet('profiles', id);
   if (p && p.resumeBlob) {
@@ -753,168 +772,6 @@ window.deleteProfile = async function (id) {
   location.hash = '#/';
 };
 
-/* ---- Find: explicit filters only. No scoring, no ranking, no learning. ---- */
-function findMatches(f, all) {
-  return all.filter(p => {
-    if (!f.have || p.gender !== f.have) return false;
-    if (f.hashkafa && p.hashkafa !== f.hashkafa) return false;
-    if (f.learnTerm && p.learnTerm !== f.learnTerm) return false;
-    if (f.workType && p.workType !== f.workType) return false;
-    if (f.town && p.town !== f.town) return false;
-    if (f.city && f.city.trim() && !String(p.location || '').toLowerCase().includes(f.city.trim().toLowerCase())) return false;
-    if (f.ageMin !== '' || f.ageMax !== '') {
-      const ag = ageFromDob(p.dob);
-      if (ag == null) return false;
-      if (f.ageMin !== '' && ag < Number(f.ageMin)) return false;
-      if (f.ageMax !== '' && ag > Number(f.ageMax)) return false;
-    }
-    return true;
-  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-}
-const FIND_BLANK = { have: '', hashkafa: '', learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' };
-async function viewMatch(id) {
-  const subject = await storeGet('profiles', id);
-  if (!subject) { location.hash = '#/'; return; }
-  window._findFor = id;
-  window._matchSubject = id;
-  window._findState = Object.assign({}, FIND_BLANK, { have: subject.gender === 'M' ? 'F' : subject.gender === 'F' ? 'M' : '' });
-  await viewAsk();
-}
-window.findSet = function (k, v, focusId) { window._findState[k] = v; viewAsk().then(() => { if (focusId) { const e = document.getElementById(focusId); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } } }); };
-window.findClear = function () { window._findState = Object.assign({}, FIND_BLANK, { have: window._findState.have }); viewAsk(); };
-window.findIdea = async function (cid) {
-  if (!window._findFor) return;
-  await storePut('feedback', { id: uid(), subjectId: window._findFor, candId: cid, verdict: 'yes', tags: [], comment: '', ts: Date.now() });
-  window._findSaved = window._findSaved || {}; window._findSaved[cid] = true;
-  viewAsk();
-};
-async function viewAsk() {
-  const f = window._findState = window._findState || Object.assign({}, FIND_BLANK);
-  const all = await storeAll('profiles');
-  const subject = window._findFor ? all.find(p => p.id === window._findFor) : null;
-  const list = f.have ? findMatches(f, all) : [];
-  const sel = (key, label, opts) => `<label class="field">${label}<select onchange="findSet('${key}',this.value)"><option value="">Any</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
-  const chip = (key, val, label) => `<button type="button" class="chip ${f[key] === val ? 'on' : ''}" onclick="findSet('${key}', window._findState.${key} === '${val}' ? '' : '${val}')">${label}</button>`;
-  const hint = !f.have ? 'Pick Boy or Girl to see profiles.' : `Showing ${list.length} ${f.have === 'M' ? 'boy' : 'girl'}${list.length === 1 ? '' : 's'} who fit every filter you set, A to Z. Nothing is scored or ranked.`;
-  app.innerHTML = `
-    <h2>${subject ? 'Find for ' + esc(nm(subject)) : 'Find'}</h2>
-    <div class="banner info">Set any filters you like and leave the rest blank. You see the profiles you have entered that fit every filter. There is no scoring, ranking or guessing.${window._findFor ? ' Tap "Save as idea" to keep a profile on this person\'s page.' : ''}</div>
-    <div class="card filterbox">
-      <div class="field"><span class="flabel">Looking for</span><div class="townchips">${chip('have', 'M', 'Boys')}${chip('have', 'F', 'Girls')}</div></div>
-      <div class="filtergrid">
-        <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="fam" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(f.ageMin)}" oninput="findSet('ageMin',this.value,'fam')"><span>to</span><input id="faM" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(f.ageMax)}" oninput="findSet('ageMax',this.value,'faM')"></div></div>
-        <div class="field"><span class="flabel">Town</span><div class="townchips">${chip('town', 'In town', 'In town')}${chip('town', 'Out of town', 'Out of town')}</div></div>
-        ${sel('learnTerm', 'Learner', ['Short-term learner', 'Long-term learner'])}
-        ${sel('workType', 'Working or learning', ['Working', 'Learning'])}
-        ${sel('hashkafa', 'Hashkafa', HASHKAFA_ORDER)}
-        <label class="field">City (typed)<input id="fcity" value="${esc(f.city)}" placeholder="Any city" autocapitalize="words" oninput="findSet('city',this.value,'fcity')"></label>
-      </div>
-      <div class="small muted">City matches any part of "Where they live". Age comes from the date of birth. Profiles missing a detail are left out while that filter is on.</div>
-      <div class="btnrow"><button class="btn subtle" onclick="findClear()">Clear filters</button></div>
-    </div>
-    <div class="small muted" style="margin:8px 2px">${hint}</div>
-    ${list.map(c => `
-      <div class="card sugg">
-        <div class="top">
-          ${avatarHTML(c)}
-          <div class="info">
-            <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(nm(c))}${ageSfx(c)}</a></div>
-            <div class="sub muted small">${esc(c.location || '')} &middot; ${esc(c.hashkafa || '')}</div>
-          </div>
-        </div>
-        ${window._findFor ? `<div class="btnrow no-print" style="margin:8px 0 0">${(window._findSaved || {})[c.id] ? '<span class="small" style="color:var(--ok);font-weight:600">Saved as an idea</span>' : `<button class="btn ghost" onclick="findIdea('${c.id}')">Save as idea</button>`}</div>` : ''}
-      </div>`).join('')}
-    ${subject ? `<p class="no-print"><a class="btn subtle" href="#/profile/${subject.id}">Back to ${esc(firstName(subject))}</a></p>` : ''}
-  `;
-}
-
-/* ---- Share package ---- */
-const SHARE_FIELDS = [
-  ['photo', 'Profile photo', 'Picture of the person'],
-  ['resume', 'Resume', 'Resume text and uploaded file'],
-  ['synopsis', 'Profile synopsis', 'The shareable summary'],
-  ['lookingFor', 'What they are looking for', 'Their preferences'],
-  ['personality', 'Personality and family background', 'Optional extra']
-];
-async function viewShare(id) {
-  const p = await storeGet('profiles', id);
-  if (!p) { location.hash = '#/'; return; }
-  const st = window._shareState = window._shareState || {};
-  st[id] = st[id] || { photo: true, resume: true, synopsis: true, lookingFor: true, personality: false };
-  const sel = st[id];
-  app.innerHTML = `
-    <h2>Share ${esc(firstName(p))}'s profile</h2>
-    <div class="banner info">A shared package lets another shadchan receive this profile in their own workspace. Choose exactly what goes in.</div>
-    <div class="card">
-      <div class="sharefield"><input type="checkbox" checked disabled><div>The basics <div class="small muted">Name, age, height, location, hashkafa, what they do</div></div><span class="hint">Always included</span></div>
-      ${SHARE_FIELDS.map(([k, label, hint]) => `
-        <div class="sharefield"><input type="checkbox" id="sf-${k}" ${sel[k] ? 'checked' : ''} onchange="toggleShareField('${id}','${k}')"><div>${label}</div><span class="hint">${hint}</span></div>
-      `).join('')}
-      <div class="lockline">Private notes are never part of a shared package - not as an option, not inside an AI-generated summary, not in an export.</div>
-    </div>
-    <div class="btnrow">
-      <button class="btn" onclick="previewShare('${id}')">Preview package</button>
-      <button class="btn ghost" onclick="downloadShare('${id}')">Download package file</button>
-    </div>
-    <button class="btn disabled" disabled>Send directly to another shadchan (needs the hosted version with accounts - not connected yet)</button>
-    <div class="banner warn" style="margin-top:12px">Design decision still open: this package is an <b>independent copy</b> - later updates you make will not reach the recipient automatically. Whether shadchanim should instead get ongoing live access with updates is still to be decided with Shalom.</div>
-    <div id="sharePreview"></div>
-    <p><a class="btn subtle" href="#/profile/${p.id}">Back to ${esc(firstName(p))}</a></p>
-  `;
-}
-window.toggleShareField = function (id, k) {
-  const st = window._shareState[id];
-  st[k] = !st[k];
-};
-function buildPackageInner(p, sel) {
-  const a = ageFromDob(p.dob);
-  return `
-    <div class="package-sheet">
-      <div class="ph">
-        ${sel.photo ? avatarHTML(p, 'lg') : ''}
-        <div>
-          <div class="name">${esc(nm(p))}</div>
-          <div class="muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${a != null ? a + ' years old' : ''} &middot; ${esc(p.location || '')}</div>
-          <div class="tagline"><span class="tag">${esc(p.hashkafa || '')}</span></div>
-        </div>
-      </div>
-      <div class="kv">
-        ${p.dob ? `<div class="k">Date of birth</div><div>${esc(p.dob)}</div>` : ''}
-        ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
-        ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
-        ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
-        ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
-        ${p.koveaItim ? `<div class="k">Kovea itim</div><div>${esc(p.koveaItim)}</div>` : ''}
-        ${p.movies ? `<div class="k">Movies</div><div>${esc(p.movies)}</div>` : ''}
-        ${p.music ? `<div class="k">Music</div><div>${esc(p.music)}</div>` : ''}
-      </div>
-      ${sel.synopsis && p.summary ? `<h3>Profile synopsis</h3><p>${esc(p.summary)}</p>` : ''}
-      ${sel.lookingFor && p.lookingFor ? `<h3>What ${p.gender === 'M' ? 'he' : 'she'} is looking for</h3><p>${esc(p.lookingFor)}</p>` : ''}
-      ${sel.personality && p.personality ? `<h3>Personality</h3><p>${esc(p.personality)}</p>` : ''}
-      ${sel.personality && p.family ? `<h3>Family</h3><p>${esc(p.family)}</p>` : ''}
-      ${sel.resume && p.resumeText ? `<h3>Resume</h3><p style="white-space:pre-wrap">${esc(p.resumeText)}</p>` : ''}
-      ${sel.resume && p.resumeName ? `<p class="small muted">Resume file attached in the sender's system: ${esc(p.resumeName)}</p>` : ''}
-    </div>
-    <p class="small muted">Shared as an independent copy. Private notes are never included.</p>
-  `;
-}
-window.previewShare = async function (id) {
-  const p = await storeGet('profiles', id);
-  const sel = window._shareState[id];
-  document.getElementById('sharePreview').innerHTML = buildPackageInner(p, sel);
-};
-window.downloadShare = async function (id) {
-  const p = await storeGet('profiles', id);
-  const sel = window._shareState[id];
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nm(p))} - Shidduch profile</title><style>body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#21312e;line-height:1.45}.package-sheet{border:1px solid #e4e0d5;border-radius:12px;padding:20px}.ph{display:flex;gap:14px;align-items:center;border-bottom:2px solid #0f4c46;padding-bottom:12px;margin-bottom:12px}.name{font-size:20px;font-weight:700}.muted{color:#5b6b68}.small{font-size:12.5px}.avatar{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;background-size:cover;background-position:center}.tag{background:#e3efec;color:#0f4c46;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}.kv{display:grid;grid-template-columns:120px 1fr;row-gap:6px;column-gap:10px;font-size:14.5px}.k{color:#5b6b68}h3{font-size:15px;color:#0f4c46;margin:16px 0 6px}.tagline{margin-top:6px}</style></head><body>${buildPackageInner(p, sel)}</body></html>`;
-  const blob = new Blob([html], { type: 'text/html' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = (p.name || 'profile').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-shidduch-profile.html';
-  a.click();
-};
-
-/* ---- Settings / more ---- */
 async function viewSettings() {
   const fb = await storeAll('feedback');
   const profiles = await storeAll('profiles');
@@ -927,7 +784,7 @@ async function viewSettings() {
     <h2>More</h2>
     <div class="card">
       <h3 style="margin-top:0">Saved ideas</h3>
-      ${fb.filter(f => f.verdict === 'yes').length === 0 ? '<p class="muted small">None yet. On a profile, tap "Find", set filters, and tap "Save as idea" on a profile to keep it on that person\'s page.</p>' : `<p class="small">${fb.filter(f => f.verdict === 'yes').length} saved idea${fb.filter(f => f.verdict === 'yes').length === 1 ? '' : 's'}. They only appear on the profile page. They do not change any search.</p>`}
+      ${fb.filter(f => f.verdict === 'yes').length === 0 ? '<p class="muted small">None yet. Saved ideas from earlier are kept here.</p>' : `<p class="small">${fb.filter(f => f.verdict === 'yes').length} saved idea${fb.filter(f => f.verdict === 'yes').length === 1 ? '' : 's'}. They only appear on the profile page. They do not change any search.</p>`}
     </div>
     <div class="card">
       <h3 style="margin-top:0">Your data</h3>
@@ -938,7 +795,7 @@ async function viewSettings() {
     </div>
     <div class="card">
       <h3 style="margin-top:0">What is real in this demo</h3>
-      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters (age, learner, working or learning, town, city, hashkafa), a Find page that lists profiles by your filters, saved ideas, share packages as files.</p>
+      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters on the Profiles list (age, learner, working or learning, in town, city), and a Share package preview on each profile where you pick exactly what goes in.</p>
       <p class="small">There is no AI anywhere in this app: no transcription, no summaries, no scoring or matching. Not connected yet: accounts and sending profiles directly between shadchanim inside the app. Those need the hosted version.</p>
       <p class="small muted">Fictional profiles only in this demo; browser storage has no backup. Real profiles come with the hosted, account-based version.</p>
     </div>
@@ -966,98 +823,147 @@ window.resetDemo = async function () {
   render();
 };
 
-/* ---- Shadchan-to-shadchan requests (fictional demo of the flow) ---- */
-async function viewRequests() {
-  app.innerHTML = `
-    <h2>Send profiles to a shadchan</h2>
-    <div class="banner warn">Not available in this demo. This demo is one browser on one device, so it cannot deliver anything to another shadchan.</div>
-    <div class="card">
-      <p>In the account version, each shadchan has a private login and their own list. You select one or more profiles, search for a shadchan who has chosen to be listed, pick copy or live, and send. Only the shareable package goes (resume, picture, synopsis, what they seek). Private notes never do, and nobody sees anyone's whole list.</p>
-      <p class="small muted">There is no request feature. Shadchanim ask each other privately outside the app.</p>
-    </div>`;
+/* ---- Send: pick a shadchan, pick exactly what goes in (demo preview only, nothing is delivered) ---- */
+// Sample names only, so the search box can be tried. They are not real people. In the account version
+// this list is the shadchanim who have a login, and nothing from it is shown until they are real.
+const SAMPLE_SHADCHANIM = ['Fictional Shadchan Alef (sample)', 'Fictional Shadchan Bais (sample)', 'Fictional Shadchan Gimel (sample)', 'Fictional Shadchan Dalet (sample)', 'Fictional Shadchan Heh (sample)', 'Fictional Shadchan Vav (sample)'];
+window._send = window._send || { to: null, q: '', picked: {}, sel: {} };
+function sendFields(p) {
+  const f = [];
+  const add = (k, label, val) => { if (val) f.push({ k, label, val: String(val) }); };
+  add('name', 'Name', nm(p));
+  const a = ageFromDob(p.dob);
+  if (a != null) add('age', 'Age (from date of birth)', a);
+  add('dob', 'Date of birth', p.dob);
+  add('height', 'Height', heightText(p));
+  add('location', 'Where they live', p.location);
+  add('community', 'Community', p.community);
+  add('role', 'What they do', p.role);
+  add('hashkafa', 'Hashkafa', p.hashkafa);
+  add('rav', 'Rav', p.rav);
+  add('koveaItim', 'Kovea itim', p.koveaItim);
+  add('movies', 'Movies', p.movies);
+  add('music', 'Music', p.music);
+  add('summary', 'Profile synopsis', p.summary);
+  add('lookingFor', 'What they are looking for', p.lookingFor);
+  add('personality', 'Personality', p.personality);
+  add('family', 'Family', p.family);
+  add('resumeText', 'Resume (text)', p.resumeText);
+  add('resumeName', 'Resume file: ' + (p.resumeName || ''), p.resumeName);
+  return f;
 }
-window.saveRequest = async function () {
-  const seek = document.getElementById('rqSeek').value;
-  const count = parseInt(document.getElementById('rqCount').value, 10);
-  const desc = document.getElementById('rqDesc').value.trim();
-  if (!desc) { alert('Describe who would fit first.'); return; }
-  const id = uid();
-  await storePut('requests', { id, seek, count, desc, ts: Date.now() });
-  location.hash = '#/request/' + id;
-};
-
-async function viewRequest(id) {
-  const r = await storeGet('requests', id);
-  if (!r) { location.hash = '#/requests'; return; }
-  app.innerHTML = `
-    <h2>Request</h2>
-    <div class="card">
-      <p>"I'm looking for <b>${r.count} ${r.seek === 'F' ? 'girls' : 'boys'}</b> who fit this description: <b>${esc(r.desc)}</b>"</p>
-      <p class="small muted">${fmtWhen(r.ts)} &middot; Not sent - this demo has no accounts or sending.</p>
-      <div class="btnrow">
-        <button class="btn ghost" onclick="location.hash='#/reply/${r.id}'">Preview what the other shadchan would see</button>
-        <button class="btn danger" onclick="deleteRequest('${r.id}')">Delete</button>
+function sendSel(pid) { return window._send.sel[pid] = window._send.sel[pid] || { fields: {}, photos: {} }; }
+async function viewSend(presetId) {
+  const S = window._send;
+  if (presetId) { S.back = presetId; if (!S.picked[presetId]) S.picked[presetId] = true; }
+  const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const qy = (S.q || '').toLowerCase();
+  const matches = S.to ? [] : SAMPLE_SHADCHANIM.filter(n => !qy || n.toLowerCase().includes(qy));
+  const pickedProfiles = profiles.filter(p => S.picked[p.id]);
+  let detail = '';
+  for (const p of pickedProfiles) {
+    const sel = sendSel(p.id);
+    const fields = sendFields(p);
+    const ph = await photosOf(p.id);
+    detail += `<div class="card sendcard">
+      <div class="sendhead">${avatarHTML(p)}<div><b>${esc(nm(p))}</b><div class="small muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Gender not set'}</div></div></div>
+      <div class="small muted" style="margin:8px 0">Nothing is ticked until you tick it.</div>
+      <div class="flabel">Photos</div>
+      <div class="sendphotos">
+        ${p.photo ? `<label class="sphoto"><input type="checkbox" ${sel.photos['_crop'] ? 'checked' : ''} onchange="sendTogglePhoto('${p.id}','_crop')"><span class="sph" style="background-image:url('${p.photo}')"></span><span class="small">Profile picture (cropped)</span></label>` : ''}
+        ${ph.map(r => `<label class="sphoto"><input type="checkbox" ${sel.photos[r.id] ? 'checked' : ''} onchange="sendTogglePhoto('${p.id}','${r.id}')"><span class="sph" style="background-image:url('${galUrl(r)}')"></span><span class="small">${esc(r.name || 'Photo')}</span></label>`).join('')}
+        ${(!p.photo && !ph.length) ? '<span class="small muted">No photos on this profile.</span>' : ''}
       </div>
-      <button class="btn disabled" disabled>Send to a shadchan (needs the hosted version with accounts - not connected yet)</button>
+      <div class="flabel" style="margin-top:12px">Details</div>
+      ${fields.map(x => `<label class="sharefield"><input type="checkbox" ${sel.fields[x.k] ? 'checked' : ''} onchange="sendToggleField('${p.id}','${x.k}')"><div>${esc(x.label)}<div class="small muted sendval">${esc(x.k === 'resumeName' ? '' : x.val.length > 90 ? x.val.slice(0, 90) + '...' : x.val)}</div></div></label>`).join('')}
+      <div class="btnrow"><button class="btn ghost" onclick="sendAll('${p.id}',true)">Tick everything shareable</button><button class="btn ghost" onclick="sendAll('${p.id}',false)">Clear ticks</button></div>
+      <div class="lockline">Private notes are not an option here. They never go in a send.</div>
+    </div>`;
+  }
+  let prev = '';
+  if (S.to && pickedProfiles.length) {
+    prev = `<h3>What ${esc(S.to)} would receive</h3><p class="small muted">Each one would be added to their own list as a new ${'profile'}, under Boys or Girls as set on the profile. It would be an independent copy.</p>`;
+    for (const p of pickedProfiles) {
+      const sel = sendSel(p.id);
+      const fields = sendFields(p).filter(x => sel.fields[x.k]);
+      const ph = await photosOf(p.id);
+      const chosenPh = [];
+      if (sel.photos['_crop'] && p.photo) chosenPh.push(p.photo);
+      for (const r of ph) if (sel.photos[r.id]) chosenPh.push(galUrl(r));
+      const none = !fields.length && !chosenPh.length;
+      prev += `<div class="package-sheet"><div class="small muted">New ${p.gender === 'M' ? 'boy' : p.gender === 'F' ? 'girl' : 'profile'}</div>
+        ${chosenPh.length ? `<div class="sendphotos">${chosenPh.map(u => `<span class="sph big" style="background-image:url('${u}')"></span>`).join('')}</div>` : ''}
+        ${none ? '<p class="muted">Nothing ticked for this profile yet.</p>' : `<div class="kv">${fields.filter(x => x.k !== 'resumeText' && x.k !== 'summary' && x.k !== 'lookingFor' && x.k !== 'personality' && x.k !== 'family').map(x => x.k === 'resumeName' ? `<div class="k">Resume file</div><div>${esc(x.val)}</div>` : `<div class="k">${esc(x.label)}</div><div>${esc(x.val)}</div>`).join('')}</div>
+        ${fields.filter(x => ['summary', 'lookingFor', 'personality', 'family', 'resumeText'].includes(x.k)).map(x => `<h3>${esc(x.label)}</h3><p style="white-space:pre-wrap">${esc(x.val)}</p>`).join('')}`}
+      </div>`;
+    }
+  }
+  const scrollY = window.scrollY;
+  app.innerHTML = `
+    <h2>Share package</h2>
+    <div class="banner warn">Preview only. This demo is one browser and cannot deliver anything. Real sending needs the account version, where each shadchan has a private login and their own list.</div>
+    <div class="card">
+      <div class="flabel">1. Who to send to</div>
+      ${S.to ? `<div class="sendto"><b>${esc(S.to)}</b> <button class="btn ghost" onclick="sendPickTo(null)">Change</button></div>` : `
+        <input id="sendq" type="search" placeholder="Search for a shadchan" value="${esc(S.q)}" oninput="sendSearch(this.value)" autocomplete="off">
+        <div class="senddrop">${matches.map((n, i) => `<button class="senditem" onclick="sendPickTo(${SAMPLE_SHADCHANIM.indexOf(n)})">${esc(n)}</button>`).join('') || '<div class="small muted" style="padding:10px">No match.</div>'}</div>
+        <div class="small muted">These six are made-up sample names so you can try the search. No real shadchan is listed in this demo.</div>`}
     </div>
-    <p><a class="btn subtle" href="#/requests">All requests</a></p>
+    <div class="card">
+      <div class="flabel">2. Which profiles</div>
+      ${profiles.map(p => `<label class="sharefield"><input type="checkbox" ${S.picked[p.id] ? 'checked' : ''} onchange="sendTogglePick('${p.id}')"><div>${esc(nm(p))}<div class="small muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : ''}${p.location ? ' &middot; ' + esc(p.location) : ''}</div></div></label>`).join('') || '<p class="muted">No profiles yet.</p>'}
+    </div>
+    ${pickedProfiles.length ? `<div class="flabel" style="margin:12px 0 4px">3. Exactly what goes in, per profile</div>` + detail : ''}
+    ${prev}
+    <button class="btn disabled" disabled>Share (needs the account version, not connected)</button>
+    <p><a class="btn subtle" href="#/${S.back ? 'profile/' + S.back : ''}">Back</a></p>
   `;
+  window.scrollTo(0, scrollY);
+  const q = document.getElementById('sendq');
+  if (q && window._sendFocus) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
-window.deleteRequest = async function (id) {
-  await storeDel('requests', id);
-  location.hash = '#/requests';
+window.sendSearch = function (v) { window._send.q = v; window._sendFocus = true; viewSend(); };
+window.sendPickTo = function (i) { window._sendFocus = false; window._send.to = i === null ? null : SAMPLE_SHADCHANIM[i]; if (i === null) window._send.q = ''; viewSend(); };
+window.sendTogglePick = function (id) { window._sendFocus = false; window._send.picked[id] = !window._send.picked[id]; viewSend(); };
+window.sendToggleField = function (pid, k) { window._sendFocus = false; const s = sendSel(pid); s.fields[k] = !s.fields[k]; viewSend(); };
+window.sendTogglePhoto = function (pid, k) { window._sendFocus = false; const s = sendSel(pid); s.photos[k] = !s.photos[k]; viewSend(); };
+window.sendAll = async function (pid, on) {
+  window._sendFocus = false;
+  const p = await storeGet('profiles', pid); const s = sendSel(pid);
+  s.fields = {}; s.photos = {};
+  if (on) { for (const x of sendFields(p)) s.fields[x.k] = true; if (p.photo) s.photos['_crop'] = true; for (const r of await photosOf(pid)) s.photos[r.id] = true; }
+  viewSend();
 };
 
-async function viewReplyPreview(id) {
-  const r = await storeGet('requests', id);
-  if (!r) { location.hash = '#/requests'; return; }
-  const profiles = (await storeAll('profiles'))
-    .filter(p => p.gender === r.seek)
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const st = window._replyPick = window._replyPick || {};
-  st[id] = st[id] || {};
-  app.innerHTML = `
-    <h2>Recipient view <span class="small muted">(demonstration)</span></h2>
-    <div class="banner warn">This is a preview of the receiving shadchan's experience, using the fictional profiles on this device. Nothing is sent or received. The recipient sees only this request and their own list - never your database.</div>
-    <div class="card">
-      <p class="small muted">Request from another shadchan:</p>
-      <p>"I'm looking for <b>${r.count} ${r.seek === 'F' ? 'girls' : 'boys'}</b> who fit this description: <b>${esc(r.desc)}</b>"</p>
-    </div>
-    <h3>Choose profiles from your own list to send back</h3>
-    ${profiles.map(p => `
-      <div class="card pcard" style="cursor:pointer" onclick="pickReply('${id}','${p.id}')">
-        ${avatarHTML(p)}
-        <div class="info">
-          <div class="name">${esc(nm(p))}${ageSfx(p)}</div>
-          <div class="sub">${esc(p.location || '')} &middot; ${esc(p.hashkafa)}</div>
-        </div>
-        <input type="checkbox" style="width:20px;height:20px;margin-left:auto" ${st[id][p.id] ? 'checked' : ''} onclick="event.stopPropagation();pickReply('${id}','${p.id}')">
-      </div>`).join('') || '<p class="muted">No profiles of this kind on this device.</p>'}
-    <div class="btnrow">
-      <button class="btn" onclick="previewReply('${id}')">Preview reply package</button>
-      <a class="btn subtle" href="#/request/${id}">Back</a>
-    </div>
-    <div class="lockline">The reply contains only the shareable package for each chosen profile (basics, photo, resume, synopsis, what they are looking for). Private notes are never included.</div>
-    <div id="replyPreview"></div>
-  `;
+
+/* ---- Camera: on a computer with a camera, "Take a picture" opens a live preview. On a phone the normal camera is used. ---- */
+function takePicture(done) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px';
+  wrap.innerHTML = '<video autoplay playsinline muted style="max-width:100%;max-height:70vh;border-radius:12px;background:#000"></video><div id="camerr" style="color:#fff"></div><div class="btnrow"><button class="btn" id="camshot">Take picture</button><button class="btn ghost" id="camx">Cancel</button></div>';
+  document.body.appendChild(wrap);
+  let stream; const v = wrap.querySelector('video');
+  const close = () => { if (stream) stream.getTracks().forEach(t => t.stop()); wrap.remove(); };
+  wrap.querySelector('#camx').onclick = close;
+  navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 } } }).then(st => { stream = st; v.srcObject = st; }).catch(err => {
+    wrap.querySelector('#camerr').textContent = 'No camera could be opened (' + (err && err.name || 'error') + '). Allow camera access in the browser, or use Choose file.';
+    wrap.querySelector('#camshot').disabled = true;
+  });
+  wrap.querySelector('#camshot').onclick = () => {
+    if (!v.videoWidth) return;
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    c.toBlob(b => { close(); done(new File([b], 'Camera ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + '.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.95);
+  };
 }
-window.pickReply = function (rid, pid) {
-  const st = window._replyPick[rid];
-  st[pid] = !st[pid];
-  viewReplyPreview(rid);
-};
-window.previewReply = async function (rid) {
-  const picks = Object.keys(window._replyPick[rid]).filter(k => window._replyPick[rid][k]);
-  if (!picks.length) { alert('Choose at least one profile.'); return; }
-  const sel = { photo: true, resume: true, synopsis: true, lookingFor: true, personality: false };
-  let html = '<h3>Reply package preview</h3>';
-  for (const pid of picks) {
-    const p = await storeGet('profiles', pid);
-    html += buildPackageInner(p, sel);
-  }
-  document.getElementById('replyPreview').innerHTML = html;
-  document.getElementById('replyPreview').scrollIntoView({ behavior: 'smooth' });
-};
+document.addEventListener('click', e => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.type !== 'file' || !el.hasAttribute('capture')) return;
+  const desktop = !(navigator.maxTouchPoints > 0) && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  if (!desktop || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  e.preventDefault();
+  takePicture(f => { const dt = new DataTransfer(); dt.items.add(f); el.files = dt.files; el.dispatchEvent(new Event('change', { bubbles: true })); });
+}, true);
 
 /* ---------------- boot ---------------- */
 window.addEventListener('hashchange', render);
