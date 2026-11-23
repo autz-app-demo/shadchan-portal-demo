@@ -414,7 +414,7 @@ async function viewProfiles() {
         <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
-      <div class="small muted">Profiles with a blank value are hidden while that filter is on. Nothing here is required on a profile. City matches the typed "Where they live" text exactly as written.</div>
+      <div class="small muted">Matches any part of "Where they live", so "Lake" finds Lakewood. Profiles missing that detail are hidden while a filter is on.</div>
       ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
     </details>
     ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',sect:'',town:'',city:''};plistFilter('all')">Show all</a></div>` : ''}
