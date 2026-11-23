@@ -7,7 +7,7 @@
 
 /* ---------------- storage ---------------- */
 const DB_NAME = 'shadchan-portal';
-const DB_VER = 2;
+const DB_VER = 3;
 let _dbp = null;
 
 function openDB() {
@@ -21,6 +21,7 @@ function openDB() {
       if (!db.objectStoreNames.contains('feedback')) db.createObjectStore('feedback', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('requests')) db.createObjectStore('requests', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'id' });
     };
     req.onsuccess = () => res(req.result);
     req.onerror = () => rej(req.error);
@@ -475,6 +476,104 @@ const PROFILE_FIELDS = [
   ['summary', 'Profile synopsis (editable, shareable)', 'textarea', false]
 ];
 
+/* ---------------- photo gallery + crop ---------------- */
+// Originals are stored untouched in the 'photos' store. The profile picture (profile.photo) is a
+// cropped square copy; profile.photoId says which gallery photo it came from, profile.photoCrop the framing.
+async function photoAll() { const db = await openDB(); return reqP(db.transaction('photos').objectStore('photos').getAll()); }
+async function photoPut(v) { const db = await openDB(); return reqP(db.transaction('photos', 'readwrite').objectStore('photos').put(v)); }
+async function photoDel(k) { const db = await openDB(); return reqP(db.transaction('photos', 'readwrite').objectStore('photos').delete(k)); }
+async function photosOf(profileId) { return (await photoAll()).filter(x => x.profileId === profileId).sort((a, b) => a.ts - b.ts); }
+async function legacyPhotoRec(p) {
+  // A picture saved before the gallery existed becomes the first gallery photo, kept as is.
+  if (!p.photo || p.photoId) return null;
+  const id = 'leg-' + p.id;
+  const have = (await photosOf(p.id)).find(x => x.id === id);
+  if (have) return have;
+  const blob = await (await fetch(p.photo)).blob();
+  const rec = { id, profileId: p.id, blob, mime: blob.type, name: 'Current picture', ts: 0 };
+  await photoPut(rec);
+  return rec;
+}
+let _G = null; // gallery state for the open form or profile page
+function galUrl(rec) { if (!rec._url) rec._url = URL.createObjectURL(rec.blob); return rec._url; }
+function galStripHTML() {
+  if (!_G) return '';
+  const items = _G.photos.map(r => `<button type="button" class="gthumb ${_G.chosenId === r.id ? 'chosen' : ''}" onclick="galPick('${r.id}')" aria-label="Photo ${esc(r.name || '')}"><img src="${galUrl(r)}" alt=""><span class="gtag">${_G.chosenId === r.id ? 'Profile picture' : ''}</span></button>`).join('');
+  return items || '<div class="small muted">No photos yet. Add photos or take one.</div>';
+}
+function galRender() { const el = document.getElementById('galstrip'); if (el) el.innerHTML = galStripHTML(); const c = document.getElementById('galcount'); if (c) c.textContent = _G.photos.length ? '(' + _G.photos.length + ')' : ''; }
+function galControlsHTML() {
+  return `<div class="galbox"><div class="galhead">Photos <span id="galcount" class="muted"></span></div>
+    <div class="galbtns"><label class="btn subtle gbtn">Choose photos<input type="file" accept="image/*" multiple id="galfiles" hidden></label><label class="btn subtle gbtn">Take a photo<input type="file" accept="image/*" capture="environment" id="galcam" hidden></label></div>
+    <div class="galstrip" id="galstrip"></div>
+    <div class="small muted">All photos stay here as you added them. Tap one to choose it as the profile picture and crop it. Only the cropped profile picture is ever shared.</div></div>`;
+}
+async function galInit(p, editId) {
+  _G = { profileId: editId || null, photos: [], chosenId: p.photoId || null, croppedUrl: null, crop: p.photoCrop || null, editId };
+  if (editId) {
+    const leg = await legacyPhotoRec(p);
+    _G.photos = await photosOf(editId);
+    if (leg) _G.chosenId = leg.id;
+  }
+  ['galfiles', 'galcam'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', async e => { const fs = [...e.target.files]; e.target.value = ''; await galAdd(fs); }); });
+  galRender();
+}
+async function galAdd(files) {
+  if (!files.length) return;
+  const added = [];
+  for (const f of files) {
+    const rec = { id: uid(), profileId: _G.profileId, blob: f, mime: f.type, name: f.name || 'Photo', ts: Date.now() };
+    if (_G.profileId) await photoPut(rec);
+    _G.photos.push(rec); added.push(rec);
+  }
+  galRender();
+  if (!_G.chosenId && added[0]) galPick(added[0].id);
+}
+window.galPick = function (id) { const r = _G.photos.find(x => x.id === id); if (r) openCrop(r); };
+function cropRect(st) { const side = st.vw / (st.s0 * st.z); st.cx = Math.min(Math.max(st.cx, side / 2), st.nw - side / 2); st.cy = Math.min(Math.max(st.cy, side / 2), st.nh - side / 2); return side; }
+function cropApply(st) {
+  const side = cropRect(st), k = st.s0 * st.z;
+  st.img.style.width = st.nw * k + 'px'; st.img.style.height = st.nh * k + 'px';
+  st.img.style.left = (st.vw / 2 - st.cx * k) + 'px'; st.img.style.top = (st.vw / 2 - st.cy * k) + 'px';
+}
+async function openCrop(rec) {
+  const img = new Image(); img.src = galUrl(rec);
+  try { await img.decode(); } catch (e) { alert('That photo could not be opened.'); return; }
+  const vw = Math.min(360, window.innerWidth - 48);
+  const prev = _G.chosenId === rec.id && _G.crop ? _G.crop : null;
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  const st = { vw, nw, nh, img, s0: Math.max(vw / nw, vw / nh), z: prev ? prev.z : 1, cx: prev ? prev.cx : nw / 2, cy: prev ? prev.cy : nh / 2 };
+  const ov = document.createElement('div'); ov.className = 'cropov'; ov.id = 'cropov';
+  ov.innerHTML = `<div class="cropbox"><div class="croptitle">Crop profile picture</div><div class="cropview" id="cropview" style="width:${vw}px;height:${vw}px"></div>
+    <label class="croplbl">Zoom<input type="range" id="cropzoom" min="1" max="4" step="0.01" value="${st.z}"></label>
+    <div class="small muted">Drag the photo to move it. The original photo is kept.</div>
+    <div class="btnrow"><button type="button" class="btn" id="cropok">Use as profile picture</button><button type="button" class="btn subtle" id="cropcancel">Cancel</button></div></div>`;
+  document.body.appendChild(ov);
+  const view = document.getElementById('cropview'); img.className = 'cropimg'; view.appendChild(img); cropApply(st);
+  let drag = null;
+  view.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; view.setPointerCapture(e.pointerId); });
+  view.addEventListener('pointermove', e => { if (!drag) return; const k = st.s0 * st.z; st.cx -= (e.clientX - drag.x) / k; st.cy -= (e.clientY - drag.y) / k; drag = { x: e.clientX, y: e.clientY }; cropApply(st); });
+  ['pointerup', 'pointercancel'].forEach(t => view.addEventListener(t, () => { drag = null; }));
+  document.getElementById('cropzoom').addEventListener('input', e => { st.z = Number(e.target.value); cropApply(st); });
+  document.getElementById('cropcancel').onclick = () => ov.remove();
+  document.getElementById('cropok').onclick = async () => {
+    const side = cropRect(st);
+    const c = document.createElement('canvas'); c.width = c.height = 600;
+    c.getContext('2d').drawImage(img, st.cx - side / 2, st.cy - side / 2, side, side, 0, 0, 600, 600);
+    const url = c.toDataURL('image/jpeg', 0.88);
+    const crop = { z: st.z, cx: st.cx, cy: st.cy };
+    if (_G.editId) {
+      const cur = await storeGet('profiles', _G.editId);
+      cur.photo = url; cur.photoId = rec.id; cur.photoCrop = crop; await storePut('profiles', cur);
+    }
+    _G.chosenId = rec.id; _G.croppedUrl = url; _G.crop = crop;
+    ov.remove(); galRender();
+    const circle = document.getElementById('ppcircle');
+    if (circle) { circle.style.backgroundImage = `url('${url}')`; circle.classList.add('hasimg'); circle.innerHTML = ''; const h = document.getElementById('pphint'); if (h) h.textContent = 'Tap the photo to change it'; }
+    if (window._galOnSaved) window._galOnSaved(url);
+  };
+}
+
 async function viewForm(editId) {
   const p = editId ? await storeGet('profiles', editId) : {};
   if (editId && p && p.height && p.heightFt === undefined) { const m = String(p.height).match(/^\s*(\d)\s*['\u2019]\s*(\d{1,2})/); if (m) { p.heightFt = m[1]; p.heightIn = m[2]; } }
@@ -510,8 +609,9 @@ async function viewForm(editId) {
           ${p.photo ? '' : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8Z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="pp-label">Add photo</span>`}
         </div>
         <div class="pp-hint" id="pphint">${p.photo ? 'Tap the photo to change it' : 'Tap to add a profile photo'}</div>
-        <input type="file" id="fphoto" accept="image/*">
+        <input type="file" id="fphoto" accept="image/*" multiple>
       </div>
+      ${galControlsHTML()}
       ${fields}
       <div class="field">Resume (optional). Saved exactly as you attach it. Nothing is read or rewritten.
         <div class="btnrow" style="margin-top:6px">
@@ -534,16 +634,8 @@ async function viewForm(editId) {
     </form>
   `;
   if (window.__afterForm) window.__afterForm(editId);
-  document.getElementById('fphoto').addEventListener('change', e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    const circle = document.getElementById('ppcircle');
-    circle.style.backgroundImage = `url('${url}')`;
-    circle.classList.add('hasimg');
-    circle.innerHTML = '';
-    document.getElementById('pphint').textContent = 'Tap the photo to change it';
-  });
+  document.getElementById('fphoto').addEventListener('change', async e => { const fs = [...e.target.files]; e.target.value = ''; await galAdd(fs); });
+  await galInit(p, editId);
   updateNewAudioWrap();
   ['fresume', 'fresumecam'].forEach(i => document.getElementById(i).addEventListener('change', e => { const f = e.target.files[0]; document.getElementById('fresumeName').textContent = f ? 'Attached: ' + f.name : ''; const o = document.getElementById(i === 'fresume' ? 'fresumecam' : 'fresume'); if (f) o.value = ''; }));
   document.getElementById('pform').addEventListener('submit', async e => {
@@ -577,8 +669,8 @@ async function viewForm(editId) {
       if (type.startsWith('select:') && (k === 'gender')) v = v === 'M' ? 'M' : v === 'F' ? 'F' : '';
       prof[k] = typeof v === 'string' ? v.trim() : v;
     }
-    const photoFile = document.getElementById('fphoto').files[0];
-    if (photoFile) prof.photo = await resizePhoto(photoFile);
+    if (editId) { const cur = await storeGet('profiles', editId); if (cur) { prof.photo = cur.photo; prof.photoId = cur.photoId; prof.photoCrop = cur.photoCrop; } }
+    else if (_G && _G.croppedUrl) { prof.photo = _G.croppedUrl; prof.photoId = _G.chosenId; prof.photoCrop = _G.crop; }
     const resumeFile = document.getElementById('fresume').files[0] || document.getElementById('fresumecam').files[0];
     if (resumeFile) {
       prof.resumeName = resumeFile.name;
@@ -586,6 +678,7 @@ async function viewForm(editId) {
     }
     try {
       await storePut('profiles', prof); _plistFilter = 'all'; _plistQ = '';
+      if (!editId && _G) for (const r of _G.photos) await photoPut({ id: r.id, profileId: prof.id, blob: r.blob, mime: r.mime, name: r.name, ts: r.ts });
       if (window._newAudio) {
         await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: window._newAudio, mime: window._newAudio.type, ts: Date.now() });
         window._newAudio = null;
@@ -665,6 +758,7 @@ async function viewProfile(id) {
         <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span></div>
       </div>
     </div>
+    <div class="card no-print" id="pgalcard"></div>
     <div class="card">
       <div class="btnrow no-print" style="margin-top:0">
         ${(p.gender === 'M' || p.gender === 'F') ? `<a class="btn" href="#/match/${p.id}">Find ${p.gender === 'M' ? 'girls' : 'boys'} for ${esc(firstName(p))}</a>` : `<a class="btn ghost" href="#/edit/${p.id}">Set boy or girl to find matches</a>`}
@@ -747,6 +841,12 @@ async function viewProfile(id) {
       <button class="btn danger" onclick="deleteProfile('${p.id}')">Delete this profile</button>
     </div>
   `;
+  const gc = document.getElementById('pgalcard');
+  if (gc) {
+    gc.innerHTML = galControlsHTML();
+    window._galOnSaved = url => { const h = document.querySelector('.hphoto'); if (h) { h.classList.remove('noimg'); h.style.background = ''; h.style.backgroundImage = `url('${url}')`; h.textContent = ''; } };
+    await galInit(p, p.id);
+  }
   // attach audio blobs
   for (const n of notes) {
     if (n.type === 'audio' && n.blob) {
@@ -782,6 +882,7 @@ window.deleteProfile = async function (id) {
   if (!confirm('Delete this profile and its private notes?')) return;
   const notes = (await storeAll('notes')).filter(n => n.profileId === id);
   for (const n of notes) await storeDel('notes', n.id);
+  for (const ph of await photosOf(id)) await photoDel(ph.id);
   await storeDel('profiles', id);
   location.hash = '#/';
 };
