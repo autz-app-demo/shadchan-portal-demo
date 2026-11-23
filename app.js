@@ -80,7 +80,8 @@ function fmtWhen(ts) {
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 function initials(name) {
-  return name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  if (!name || !name.trim()) return '?';
+  return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 function avatarHTML(p, cls) {
   const style = p.photo
@@ -116,10 +117,12 @@ function parseAgeRange(text) {
   return [Math.min(a, b), Math.max(a, b)];
 }
 
-function firstName(p) { return (p.name || '').split(' ')[0]; }
+function nm(p) { return (p && p.name) || 'Unnamed profile'; }
+function ageSfx(p) { const a = ageFromDob(p.dob); return a != null ? ', ' + a : ''; }
+function firstName(p) { return (p.name || 'this person').split(' ')[0]; }
 
 function scorePair(subject, cand, weights) {
-  if (!subject || !cand || subject.gender === cand.gender) return null;
+  if (!subject || !cand || !subject.gender || !cand.gender || subject.gender === cand.gender) return null;
   const boy = subject.gender === 'M' ? subject : cand;
   const girl = subject.gender === 'M' ? cand : subject;
   const factors = [];
@@ -381,12 +384,12 @@ async function render() {
 
 let _plistFilter = 'all', _plistQ = '';
 async function viewProfiles() {
-  const profiles = (await storeAll('profiles')).sort((a, b) => a.name.localeCompare(b.name));
+  const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const q = _plistQ.toLowerCase();
   const list = profiles.filter(p => {
     if (_plistFilter === 'boys' && p.gender !== 'M') return false;
     if (_plistFilter === 'girls' && p.gender !== 'F') return false;
-    if (q && !(p.name + ' ' + p.location + ' ' + p.hashkafa + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
+    if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
   });
   app.innerHTML = `
@@ -403,8 +406,8 @@ async function viewProfiles() {
           ? `<div class="pphoto" style="background-image:url('${p.photo}')"></div>`
           : `<div class="pphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
         <div class="pbody">
-          <div class="pname">${esc(p.name)}, ${ageFromDob(p.dob)}</div>
-          <div class="psub">${esc(p.location)}</div>
+          <div class="pname">${esc(nm(p))}${ageSfx(p)}</div>
+          <div class="psub">${esc(p.location || '')}</div>
           <div class="tagline"><span class="tag">${esc(p.hashkafa)}</span></div>
         </div>
       </a>`).join('') || '<p class="muted">No profiles match.</p>'}
@@ -415,13 +418,13 @@ async function viewProfiles() {
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
-  ['name', 'Full name', 'text', true],
-  ['gender', 'Boy or girl', 'select:This profile is a,Boy,Girl', true],
-  ['dob', 'Date of birth', 'date', true],
+  ['name', 'Full name', 'text', false],
+  ['gender', 'Boy or girl', 'select:This profile is a,Boy,Girl', false],
+  ['dob', 'Date of birth', 'date', false],
   ['height', 'Height', 'text', false],
-  ['location', 'Where they live', 'text', true],
+  ['location', 'Where they live', 'text', false],
   ['community', 'Community / neighborhood', 'text', false],
-  ['hashkafa', 'Hashkafa', 'selecthashkafa', true],
+  ['hashkafa', 'Hashkafa', 'selecthashkafa', false],
   ['role', 'What they do (learning / work)', 'text', false],
   ['rav', 'Rav', 'text', false],
   ['minyan', 'Minyan', 'text', false],
@@ -610,8 +613,8 @@ async function viewProfile(id) {
         ? `<div class="hphoto" style="background-image:url('${p.photo}')"></div>`
         : `<div class="hphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
       <div class="hoverlay">
-        <div class="hname">${esc(p.name)}</div>
-        <div class="hsub">${p.gender === 'M' ? 'Boy' : 'Girl'} &middot; ${ageFromDob(p.dob) || '?'} years old &middot; ${esc(p.location)}</div>
+        <div class="hname">${esc(nm(p))}</div>
+        <div class="hsub">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${ageFromDob(p.dob) != null ? ageFromDob(p.dob) + ' years old' : 'age not added'} &middot; ${esc(p.location || '')}</div>
         <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span>${p.openToRelocate ? '<span class="htag">Open to relocating</span>' : ''}</div>
       </div>
     </div>
@@ -664,7 +667,7 @@ async function viewProfile(id) {
         <a class="idearow" href="#/profile/${c.id}">
           ${avatarHTML(c)}
           <div class="info">
-            <div class="name">${esc(c.name)}, ${ageFromDob(c.dob)}</div>
+            <div class="name">${esc(nm(c))}${ageSfx(c)}</div>
             <div class="sub">${esc(c.location)} &middot; ${esc(c.hashkafa || '')}</div>
             ${f.comment ? `<div class="sub">Your note: ${esc(f.comment)}</div>` : ''}
             <div class="when muted">Saved ${fmtWhen(f.ts)}</div>
@@ -747,14 +750,14 @@ async function viewMatch(id) {
   const top = scored.slice(0, 5);
   const seeking = subject.gender === 'M' ? 'girls' : 'boys';
   app.innerHTML = `
-    <h2>Ideas for ${esc(subject.name)}</h2>
+    <h2>Ideas for ${esc(nm(subject))}</h2>
     <div class="banner info">These suggestions come from a simple rules engine on this device - they are ideas for you to review, not verified compatibility. Marking "good idea" or "not a fit" teaches it what matters to you.</div>
     ${top.map(({ c, s }) => `
       <div class="card sugg">
         <div class="top">
           ${avatarHTML(c)}
           <div class="info">
-            <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(c.name)}, ${ageFromDob(c.dob)}</a></div>
+            <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(nm(c))}${ageSfx(c)}</a></div>
             <div class="sub muted small">${esc(c.location)} &middot; ${esc(c.hashkafa)}</div>
           </div>
         </div>
@@ -800,7 +803,7 @@ async function viewAsk() {
           <div class="top">
             ${avatarHTML(c)}
             <div class="info">
-              <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(c.name)}, ${ageFromDob(c.dob)}</a></div>
+              <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(nm(c))}${ageSfx(c)}</a></div>
               <div class="sub muted small">${esc(c.location)} &middot; ${esc(c.hashkafa)}</div>
             </div>
           </div>
@@ -921,8 +924,8 @@ function buildPackageInner(p, sel) {
       <div class="ph">
         ${sel.photo ? avatarHTML(p, 'lg') : ''}
         <div>
-          <div class="name">${esc(p.name)}</div>
-          <div class="muted">${p.gender === 'M' ? 'Boy' : 'Girl'} &middot; ${a != null ? a + ' years old' : ''} &middot; ${esc(p.location)}</div>
+          <div class="name">${esc(nm(p))}</div>
+          <div class="muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${a != null ? a + ' years old' : ''} &middot; ${esc(p.location || '')}</div>
           <div class="tagline"><span class="tag">${esc(p.hashkafa || '')}</span></div>
         </div>
       </div>
@@ -954,11 +957,11 @@ window.previewShare = async function (id) {
 window.downloadShare = async function (id) {
   const p = await storeGet('profiles', id);
   const sel = window._shareState[id];
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(p.name)} - Shidduch profile</title><style>body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#21312e;line-height:1.45}.package-sheet{border:1px solid #e4e0d5;border-radius:12px;padding:20px}.ph{display:flex;gap:14px;align-items:center;border-bottom:2px solid #0f4c46;padding-bottom:12px;margin-bottom:12px}.name{font-size:20px;font-weight:700}.muted{color:#5b6b68}.small{font-size:12.5px}.avatar{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;background-size:cover;background-position:center}.tag{background:#e3efec;color:#0f4c46;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}.kv{display:grid;grid-template-columns:120px 1fr;row-gap:6px;column-gap:10px;font-size:14.5px}.k{color:#5b6b68}h3{font-size:15px;color:#0f4c46;margin:16px 0 6px}.tagline{margin-top:6px}</style></head><body>${buildPackageInner(p, sel)}</body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nm(p))} - Shidduch profile</title><style>body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#21312e;line-height:1.45}.package-sheet{border:1px solid #e4e0d5;border-radius:12px;padding:20px}.ph{display:flex;gap:14px;align-items:center;border-bottom:2px solid #0f4c46;padding-bottom:12px;margin-bottom:12px}.name{font-size:20px;font-weight:700}.muted{color:#5b6b68}.small{font-size:12.5px}.avatar{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;background-size:cover;background-position:center}.tag{background:#e3efec;color:#0f4c46;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}.kv{display:grid;grid-template-columns:120px 1fr;row-gap:6px;column-gap:10px;font-size:14.5px}.k{color:#5b6b68}h3{font-size:15px;color:#0f4c46;margin:16px 0 6px}.tagline{margin-top:6px}</style></head><body>${buildPackageInner(p, sel)}</body></html>`;
   const blob = new Blob([html], { type: 'text/html' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = p.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-shidduch-profile.html';
+  a.download = (p.name || 'profile').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-shidduch-profile.html';
   a.click();
 };
 
@@ -1086,7 +1089,7 @@ async function viewReplyPreview(id) {
   if (!r) { location.hash = '#/requests'; return; }
   const profiles = (await storeAll('profiles'))
     .filter(p => p.gender === r.seek)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const st = window._replyPick = window._replyPick || {};
   st[id] = st[id] || {};
   app.innerHTML = `
@@ -1101,8 +1104,8 @@ async function viewReplyPreview(id) {
       <div class="card pcard" style="cursor:pointer" onclick="pickReply('${id}','${p.id}')">
         ${avatarHTML(p)}
         <div class="info">
-          <div class="name">${esc(p.name)}, ${ageFromDob(p.dob)}</div>
-          <div class="sub">${esc(p.location)} &middot; ${esc(p.hashkafa)}</div>
+          <div class="name">${esc(nm(p))}${ageSfx(p)}</div>
+          <div class="sub">${esc(p.location || '')} &middot; ${esc(p.hashkafa)}</div>
         </div>
         <input type="checkbox" style="width:20px;height:20px;margin-left:auto" ${st[id][p.id] ? 'checked' : ''} onclick="event.stopPropagation();pickReply('${id}','${p.id}')">
       </div>`).join('') || '<p class="muted">No profiles of this kind on this device.</p>'}
