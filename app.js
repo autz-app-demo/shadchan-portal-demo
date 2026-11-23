@@ -387,7 +387,7 @@ async function render() {
 }
 
 let _plistFilter = 'all', _plistQ = '';
-let _pf = { learnTerm: '', workType: '', town: '', city: '' }, _pfOpen = false;
+let _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' }, _pfOpen = false;
 const _pfActive = () => Object.values(_pf).filter(Boolean).length;
 async function viewProfiles() {
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -399,6 +399,12 @@ async function viewProfiles() {
     if (_pf.learnTerm && p.learnTerm !== _pf.learnTerm) return false;
     if (_pf.workType && p.workType !== _pf.workType) return false;
     if (_pf.town && p.town !== _pf.town) return false;
+    if (_pf.ageMin !== '' || _pf.ageMax !== '') {
+      const ag = ageFromDob(p.dob);
+      if (ag == null) return false;
+      if (_pf.ageMin !== '' && ag < Number(_pf.ageMin)) return false;
+      if (_pf.ageMax !== '' && ag > Number(_pf.ageMax)) return false;
+    }
     if (_pf.city.trim() && !String(p.location || '').toLowerCase().includes(_pf.city.trim().toLowerCase())) return false;
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
@@ -415,13 +421,14 @@ async function viewProfiles() {
       <div class="filtergrid">
         <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">Working or learning<select onchange="pfSet('workType',this.value)"><option value="">Any</option>${['Working', 'Learning'].map(o => `<option ${_pf.workType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
-        <label class="field">In town or out of town<select onchange="pfSet('town',this.value)"><option value="">Any</option>${['In town', 'Out of town'].map(o => `<option ${_pf.town === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <div class="field"><span class="flabel">Town</span><div class="townchips"><button type="button" class="chip ${_pf.town === 'In town' ? 'on' : ''}" onclick="pfSet('town', _pf.town === 'In town' ? '' : 'In town')">In town</button><button type="button" class="chip ${_pf.town === 'Out of town' ? 'on' : ''}" onclick="pfSet('town', _pf.town === 'Out of town' ? '' : 'Out of town')">Out of town</button></div></div>
+        <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="pfamin" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(_pf.ageMin)}" oninput="pfAge('ageMin',this.value,'pfamin')"><span>to</span><input id="pfamax" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(_pf.ageMax)}" oninput="pfAge('ageMax',this.value,'pfamax')"></div></div>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
-      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Profiles missing a detail are hidden while that filter is on.</div>
+      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Age comes from the date of birth. Profiles missing a detail are hidden while that filter is on.</div>
       ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
     </details>
-    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:''};plistFilter('all')">Show all</a></div>` : ''}
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:'',ageMin:'',ageMax:''};plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -439,7 +446,8 @@ async function viewProfiles() {
   document.getElementById('pq').addEventListener('input', e => { _plistQ = e.target.value; viewProfiles(); });
 }
 window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById('pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
-window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '' }; viewProfiles(); };
+window.pfAge = function (k, v, id) { _pf[k] = v; viewProfiles().then(() => { const e = document.getElementById(id); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } }); };
+window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
