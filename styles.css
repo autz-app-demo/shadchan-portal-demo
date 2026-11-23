@@ -306,3 +306,12 @@ label.field textarea{min-height:76px;resize:vertical}
 .heightrow .hline label{display:flex;flex:1;align-items:center;gap:8px;min-width:0}
 .heightrow .hline input{flex:1;min-width:0;width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:11px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink)}
 .heightrow .hline span{font-size:14px;color:var(--ink-soft);font-weight:600}
+
+.filterbox{margin:8px 0 12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.filterbox summary{padding:12px 0;font-weight:700;font-size:14.5px;color:var(--accent);cursor:pointer;list-style:none}
+.filterbox summary::-webkit-details-marker{display:none}
+.filterbox summary::after{content:'+';float:right;font-size:18px}
+.filterbox[open] summary::after{content:'\2212'}
+.filterbox .filtergrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.filterbox .btn{margin:8px 0 12px}
+@media(max-width:480px){.filterbox .filtergrid{grid-template-columns:1fr}}
