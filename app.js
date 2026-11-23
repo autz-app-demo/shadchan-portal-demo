@@ -38,19 +38,15 @@ async function ensureSeed() {
   if (window.__cs) return;
   const existing = await storeAll('profiles');
   if (!existing || existing.length === 0) {
-    for (const p of SEED_PROFILES) {
-      const cp = Object.assign({}, p);
-      if (window.SEED_PORTRAITS && window.SEED_PORTRAITS[cp.id]) cp.photo = window.SEED_PORTRAITS[cp.id];
-      await storePut('profiles', cp);
-    }
+    for (const p of SEED_PROFILES) await storePut('profiles', Object.assign({}, p));
     return;
   }
-  // Backfill illustrated demo portraits onto seed profiles that have no
-  // user-chosen photo yet. Never touches a photo anyone added themselves.
+  // Remove the old synthetic cartoon portraits from demo seed profiles. Only a photo that is
+  // exactly the old built-in illustration is cleared; any photo someone added is never touched.
   if (window.SEED_PORTRAITS) {
     for (const p of existing) {
-      if (!p.photo && window.SEED_PORTRAITS[p.id]) {
-        p.photo = window.SEED_PORTRAITS[p.id];
+      if (p.photo && window.SEED_PORTRAITS[p.id] === p.photo) {
+        delete p.photo;
         await storePut('profiles', p);
       }
     }
@@ -765,7 +761,7 @@ async function viewMatch(id) {
   const seeking = subject.gender === 'M' ? 'girls' : 'boys';
   app.innerHTML = `
     <h2>Ideas for ${esc(nm(subject))}</h2>
-    <div class="banner info">These suggestions come from a simple rules engine on this device - they are ideas for you to review, not verified compatibility. Marking "good idea" or "not a fit" teaches it what matters to you.</div>
+    <div class="banner info">These suggestions come from a simple rules engine on this device - they are ideas for you to review, not verified compatibility. "Good idea" is saved to your list and does not change the ranking. "Not a fit" with reason tags makes those factors count more in later searches on this device. Written comments are saved for you and are not read by the matcher.</div>
     ${top.map(({ c, s }) => `
       <div class="card sugg">
         <div class="top">
@@ -780,7 +776,7 @@ async function viewMatch(id) {
           ${s.concerns.map(r => `<li class="concern">To check: ${esc(r)}</li>`).join('')}
         </ul>
         <div class="feedback no-print">
-          ${(fbState[c.id] && fbState[c.id].saved) ? `<div class="small" style="color:var(--ok);font-weight:600">Feedback saved${fbState[c.id].saved === 'yes' ? ' - marked a good idea' : ' - the matcher will weigh this going forward'}.</div>` : ''}
+          ${(fbState[c.id] && fbState[c.id].saved) ? `<div class="small" style="color:var(--ok);font-weight:600">Feedback saved${fbState[c.id].saved === 'yes' ? ' - marked a good idea' : (Object.keys((fbState[c.id].tags) || {}).some(t => fbState[c.id].tags[t]) ? ' - the tagged factors will count more in later searches' : ' - no reason tags picked, so the ranking is unchanged')}.</div>` : ''}
           <div class="btnrow" style="margin:0 0 6px">
             <button class="btn ghost" onclick="fbVerdict('${c.id}','yes')">Good idea</button>
             <button class="btn subtle" onclick="fbVerdict('${c.id}','no')">Not a fit</button>
@@ -993,7 +989,7 @@ async function viewSettings() {
   app.innerHTML = `
     <h2>More</h2>
     <div class="card">
-      <h3 style="margin-top:0">What the matcher has learned from you</h3>
+      <h3 style="margin-top:0">Your feedback so far</h3>
       ${fb.length === 0 ? '<p class="muted small">No feedback yet. On any profile, tap "Find" and mark suggestions as good ideas or not a fit.</p>' : `
         <p class="small">You have given feedback on ${fb.length} suggestion${fb.length === 1 ? '' : 's'} (${no.length} declined).</p>
         ${topTags.length ? `<p class="small">Reasons you decline most: ${topTags.map(([t, c]) => `${t} (${c})`).join(', ')}. Those factors now count more heavily.</p>` : ''}
