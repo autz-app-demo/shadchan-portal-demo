@@ -451,6 +451,8 @@ async function viewForm(editId) {
   if (editId && !p) { location.hash = '#/'; return; }
   const fields = PROFILE_FIELDS.map(([k, label, type, req]) => {
     const v = p[k] || '';
+    if (k === 'heightIn') return '';
+    if (k === 'heightFt') return `<div class="field heightrow"><div class="hlabel">Height</div><div class="hline"><label><input type="number" name="heightFt" inputmode="numeric" min="1" max="8" step="1" value="${esc(p.heightFt || '')}" aria-label="Height, feet"><span>ft</span></label><label><input type="number" name="heightIn" inputmode="numeric" min="0" max="11" step="1" value="${esc(p.heightIn || '')}" aria-label="Height, inches"><span>in</span></label></div></div>`;
     if (type === 'textarea') return `<label class="field">${label}<textarea name="${k}">${esc(v)}</textarea></label>`;
     if (type === 'selecthashkafa') {
       return `<label class="field">${label}<select name="${k}"><option value=""></option>${HASHKAFA_ORDER.map(h => `<option ${v === h ? 'selected' : ''}>${h}</option>`).join('')}</select></label>`;
