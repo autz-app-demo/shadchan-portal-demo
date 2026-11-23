@@ -42,6 +42,13 @@ async function ensureSeed() {
     for (const p of SEED_PROFILES) await storePut('profiles', Object.assign({}, p));
     return;
   }
+  // Update sample text that still mentioned the removed Kovea itim field (exact old sample text only).
+  for (const p of existing) {
+    const sp = (typeof SEED_PROFILES !== "undefined" ? SEED_PROFILES : []).find(x => x.id === p.id);
+    if (sp && p.lookingFor && /kovea itim/i.test(p.lookingFor) && !/kovea itim/i.test(sp.lookingFor || '')) {
+      p.lookingFor = sp.lookingFor; await storePut('profiles', p);
+    }
+  }
   // Remove the old synthetic cartoon portraits from demo seed profiles. Only a photo that is
   // exactly the old built-in illustration is cleared; any photo someone added is never touched.
   if (window.SEED_PORTRAITS) {
@@ -185,7 +192,7 @@ window.toggleRec = async function (key) {
     if (key === 'ask') {
       window._askAudio = blob;
     } else if (key === 'new') {
-      window._newAudio = blob;
+      (window._newAudios = window._newAudios || []).push(blob);
       updateNewAudioWrap();
       return;
     } else {
@@ -229,9 +236,9 @@ function hideRecBar() {
 async function render() {
   const hash = location.hash || '#/';
   // Never silently lose a recorded voice note on the Add form: ask before leaving it behind.
-  if (window._newAudio && !hash.startsWith('#/add') && !window._newAudioKeep) {
-    if (confirm('You recorded a voice note that is not saved with a profile yet. Discard it?')) {
-      window._newAudio = null;
+  if (((window._newAudios || []).length || (window._newNotes || []).length) && !hash.startsWith('#/add') && !window._newAudioKeep) {
+    if (confirm('You added notes or voice notes that are not saved with a profile yet. Discard them?')) {
+      window._newAudios = []; window._newNotes = [];
     } else {
       location.hash = '#/add';
       return;
@@ -499,10 +506,16 @@ async function viewForm(editId) {
       </div>
       ${p.resumeName ? `<div class="small muted">A resume file is saved: ${esc(p.resumeName)}. Choosing a new one replaces it.</div>` : ''}
       ${!editId ? `
-      <label class="field privred"><span class="privlabel">Private notes (never shared)</span><textarea name="privNote" placeholder="Type a private note (optional)" class="privtext"></textarea></label>
+      <div class="field privred">
+        <span class="privlabel">Private notes (never shared)</span>
+        <div id="newNotesList"></div>
+        <textarea id="newNoteText" placeholder="Type a private note" class="privtext"></textarea>
+        <button type="button" class="btn savenote" onclick="addNewNote()" style="margin-top:8px">Add this note</button>
+        <div class="small muted" style="margin-top:6px">You can add as many typed notes and voice notes as you like. They are saved with the profile when you tap Add profile, and are never shared.</div>
+      </div>
       <div class="field">
-        <span class="small privred" style="font-weight:600">Voice note (optional, private, never shared)</span>
-        <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. It is kept as a recording for playback only and is not transcribed.</div>
+        <span class="small privred" style="font-weight:600">Voice notes (private, never shared)</span>
+        <div class="small muted" style="margin:2px 0 8px">Record as many as you like. Each is kept as a recording for playback only and is not transcribed.</div>
         <div id="newAudioWrap"></div>
       </div>` : ''}
       <div class="btnrow">
@@ -558,12 +571,9 @@ async function viewForm(editId) {
     try {
       await storePut('profiles', prof); _plistFilter = 'all'; _plistQ = '';
       if (!editId && _G) for (const r of _G.photos) await photoPut({ id: r.id, profileId: prof.id, blob: r.blob, mime: r.mime, name: r.name, ts: r.ts });
-      { const pn = String(fd.get('privNote') || '').trim(); if (pn && !editId) await storePut('notes', { id: uid(), profileId: prof.id, type: 'text', text: pn, ts: Date.now() }); }
-      if (window._newAudio) {
-        await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: window._newAudio, mime: window._newAudio.type, ts: Date.now() });
-        window._newAudio = null;
-        window._newAudioKeep = true;
-      }
+      { if (!editId) { const pend = (document.getElementById('newNoteText').value || '').trim(); const all = (window._newNotes || []).concat(pend ? [pend] : []); for (const t of all) await storePut('notes', { id: uid(), profileId: prof.id, type: 'text', text: t, ts: Date.now() }); } }
+      for (const bl of (window._newAudios || [])) await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: bl, mime: bl.type, ts: Date.now() });
+      window._newAudios = []; window._newNotes = []; window._newAudioKeep = true;
     } catch (err) {
       missBox.textContent = 'Something went wrong saving. Everything you entered is still on this page - please try again.';
       missBox.style.display = '';
@@ -577,21 +587,25 @@ async function viewForm(editId) {
 function updateNewAudioWrap() {
   const wrap = document.getElementById('newAudioWrap');
   if (!wrap) return;
-  wrap.innerHTML = window._newAudio ? `
+  const auds = window._newAudios || [];
+  wrap.innerHTML = auds.map((b, i) => `
     <div class="newaudio">
-      <audio controls id="newAudioPlayer"></audio>
-      <div class="small muted">Recorded - saves with this profile. Discard to re-record.</div>
-      <button type="button" class="btn ghost small" onclick="discardNewAudio()">Discard voice note</button>
-    </div>` : `
-    <button type="button" class="btn ghost" id="rec-new" onclick="toggleRec('new')">Record voice note</button>`;
-  const nap = document.getElementById('newAudioPlayer');
-  if (nap && window._newAudio) nap.src = URL.createObjectURL(window._newAudio);
+      <audio controls data-i="${i}"></audio>
+      <div class="small muted">Voice note ${i + 1} recorded. It saves with this profile.</div>
+      <button type="button" class="btn ghost small" onclick="discardNewAudio(${i})">Discard voice note ${i + 1}</button>
+    </div>`).join('') + `
+    <button type="button" class="btn ghost" id="rec-new" onclick="toggleRec('new')">${auds.length ? 'Record another voice note' : 'Record voice note'}</button>`;
+  wrap.querySelectorAll('audio[data-i]').forEach(a => { a.src = URL.createObjectURL(auds[+a.dataset.i]); });
+  const nl = document.getElementById('newNotesList');
+  if (nl) nl.innerHTML = (window._newNotes || []).map((t, i) => `<div class="note"><div class="privtext">${esc(t)}</div><a href="javascript:void 0" class="muted small" onclick="removeNewNote(${i})">Remove</a></div>`).join('');
 }
-
-window.discardNewAudio = function () {
-  window._newAudio = null;
-  updateNewAudioWrap();
+window.addNewNote = function () {
+  const box = document.getElementById('newNoteText'); const t = box.value.trim();
+  if (!t) return;
+  (window._newNotes = window._newNotes || []).push(t); box.value = ''; updateNewAudioWrap(); box.focus();
 };
+window.removeNewNote = function (i) { (window._newNotes || []).splice(i, 1); updateNewAudioWrap(); };
+window.discardNewAudio = function (i) { (window._newAudios || []).splice(i, 1); updateNewAudioWrap(); };
 
 function resizePhoto(file) {
   return new Promise((res, rej) => {
@@ -703,7 +717,7 @@ async function viewProfile(id) {
 
     <div class="card privred">
       <h3 style="margin-top:0">Private notes <span class="small">(never shared)</span></h3>
-      <div class="lockline">Private notes stay with you. They are never included in a shared package, an export, or any AI-generated shareable summary.</div>
+      <div class="lockline">Private notes stay with you. They are never included in a shared package, or an export.</div>
       <div id="notesList">
         ${notes.map(n => `
           <div class="note">
@@ -715,9 +729,10 @@ async function viewProfile(id) {
       </div>
       <textarea id="noteText" class="searchbar" style="min-height:64px" placeholder="Type a private note..."></textarea>
       <div class="btnrow">
-        <button class="btn ghost" onclick="addTextNote('${p.id}')">Save note</button>
+        <button class="btn savenote" onclick="addTextNote('${p.id}')">Save note</button>
         <button class="btn subtle" id="rec-${p.id}" onclick="toggleRec('${p.id}')">Record voice note</button>
       </div>
+      <div id="noteStatus" class="notestatus ${window._noteMsg && window._noteMsg.pid === p.id && Date.now() - window._noteMsg.t < 15000 ? '' : 'hide'}" role="status">${window._noteMsg && window._noteMsg.pid === p.id && Date.now() - window._noteMsg.t < 15000 ? esc(window._noteMsg.text) : ''}</div>
     </div>
 
     <div class="card no-print">
@@ -753,10 +768,19 @@ window.saveSummary = async function (id) {
   render();
 };
 window.addTextNote = async function (id) {
-  const t = document.getElementById('noteText').value.trim();
-  if (!t) return;
-  await storePut('notes', { id: uid(), profileId: id, type: 'text', text: t, ts: Date.now() });
-  render();
+  const box = document.getElementById('noteText');
+  const t = box.value.trim();
+  if (!t) { window._noteMsg = { pid: id, t: Date.now(), text: 'Nothing saved. Type a note first.' }; const st = document.getElementById('noteStatus'); st.textContent = window._noteMsg.text; st.className = 'notestatus warn'; return; }
+  const nid = uid();
+  let ok = false;
+  try {
+    await storePut('notes', { id: nid, profileId: id, type: 'text', text: t, ts: Date.now() });
+    const back = await storeGet('notes', nid);
+    ok = !!(back && back.text === t);
+  } catch (e) { ok = false; }
+  const d = new Date();
+  window._noteMsg = { pid: id, t: Date.now(), text: ok ? 'Saved \u2713 private note saved at ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'NOT saved. Your text is still in the box. Try again.' };
+  if (ok) { render(); } else { const st = document.getElementById('noteStatus'); st.textContent = window._noteMsg.text; st.className = 'notestatus warn'; }
 };
 window.deleteNote = async function (nid) {
   await storeDel('notes', nid);
