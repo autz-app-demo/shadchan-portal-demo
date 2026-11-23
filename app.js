@@ -257,7 +257,7 @@ async function render() {
 }
 
 let _plistFilter = 'all', _plistQ = '';
-let _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', school: '' }, _pfOpen = false;
+let _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', movies: '', school: '' }, _pfOpen = false;
 const _pfActive = () => Object.values(_pf).filter(Boolean).length;
 async function viewProfiles() {
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -277,8 +277,9 @@ async function viewProfiles() {
     }
     if (_pf.phoneType && p.phoneType !== _pf.phoneType) return false;
     if (_pf.music && p.music !== _pf.music) return false;
+    if (_pf.movies && p.movies !== _pf.movies) return false;
     if (_pf.school.trim() && !String(p.school || '').toLowerCase().includes(_pf.school.trim().toLowerCase())) return false;
-    if (_pf.city.trim() && !String(p.location || '').toLowerCase().includes(_pf.city.trim().toLowerCase())) return false;
+    if (_pf.city.trim()) { const cq = _pf.city.trim().toLowerCase().replace(/[^a-z0-9 ]/g, ''); const words = String(p.location || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); if (cq && !words.some(w => w.startsWith(cq)) && !String(p.location || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').includes(cq)) return false; }
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
   });
@@ -292,19 +293,20 @@ async function viewProfiles() {
     </div>
     <details class="filterbox" ${_pfOpen || _pfActive() ? 'open' : ''} ontoggle="_pfOpen=this.open"><summary>Filters${_pfActive() ? ` (${_pfActive()} on)` : ''}</summary>
       <div class="filtergrid">
-        <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">Working or learning<select onchange="pfSet('workType',this.value)"><option value="">Any</option>${['Working', 'Learning'].map(o => `<option ${_pf.workType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">In town<select onchange="pfSet('town',this.value)"><option value="">Any</option>${['In town', 'Out of town'].map(o => `<option ${_pf.town === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="pfamin" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(_pf.ageMin)}" oninput="pfAge('ageMin',this.value,'pfamin')"><span>to</span><input id="pfamax" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(_pf.ageMax)}" oninput="pfAge('ageMax',this.value,'pfamax')"></div></div>
         <label class="field">Phone<select onchange="pfSet('phoneType',this.value)"><option value="">Any</option>${['Flip phone', 'Smartphone'].map(o => `<option ${_pf.phoneType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">Music<select onchange="pfSet('music',this.value)"><option value="">Any</option>${['Non-Jewish music', 'Only Jewish music'].map(o => `<option ${_pf.music === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">Movies<select onchange="pfSet('movies',this.value)"><option value="">Any</option>${['No', 'Rarely', 'Occasionally', 'Regularly'].map(o => `<option ${_pf.movies === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">Yeshiva or school (typed)<input id="pfschool" value="${esc(_pf.school)}" placeholder="Any" oninput="pfSet('school',this.value,true)"></label>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
-      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Age comes from the date of birth, or from the age as entered when there is no date of birth. Profiles missing a detail are hidden while that filter is on.</div>
+      <div class="small muted">City is typed. Type just the first few letters: "Lak" finds Lakewood. Age comes from the date of birth, or from the age as entered when there is no date of birth. Profiles missing a detail are hidden while that filter is on.</div>
       ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
     </details>
-    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:'',ageMin:'',ageMax:'',phoneType:'',music:'',school:''};plistFilter('all')">Show all</a></div>` : ''}
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:'',ageMin:'',ageMax:'',phoneType:'',music:'',movies:'',school:''};plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -324,7 +326,7 @@ async function viewProfiles() {
 window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById(k === 'school' ? 'pfschool' : 'pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
 window.pfAge = function (k, v, id) { _pf[k] = v; viewProfiles().then(() => { const e = document.getElementById(id); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } }); };
 window.chipPick = function (btn, val) { const wrap = btn.closest('.chipfield'); const inp = wrap.querySelector('input[type=hidden]'); const off = inp.value === val; inp.value = off ? '' : val; wrap.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', !off && c.textContent === val)); };
-window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', school: '' }; viewProfiles(); };
+window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', movies: '', school: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
@@ -809,7 +811,7 @@ async function viewSettings() {
     </div>
     <div class="card">
       <h3 style="margin-top:0">What is real in this demo</h3>
-      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters on the Profiles list (age, learner, working or learning, in town, city, phone, music, yeshiva or school), and a Share package preview on each profile where you pick exactly what goes in.</p>
+      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters on the Profiles list (age, working or learning, learner, in town, city, phone, music, movies, yeshiva or school), and a Share package preview on each profile where you pick exactly what goes in.</p>
       <p class="small">There is no AI anywhere in this app: no transcription, no summaries, no scoring or matching. Not connected yet: accounts and sending profiles directly between shadchanim inside the app. Those need the hosted version.</p>
       <p class="small muted">Fictional profiles only in this demo; browser storage has no backup. Real profiles come with the hosted, account-based version.</p>
     </div>
