@@ -447,6 +447,7 @@ async function viewProfiles() {
 }
 window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById('pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
 window.pfAge = function (k, v, id) { _pf[k] = v; viewProfiles().then(() => { const e = document.getElementById(id); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } }); };
+window.chipPick = function (btn, val) { const wrap = btn.closest('.chipfield'); const inp = wrap.querySelector('input[type=hidden]'); const off = inp.value === val; inp.value = off ? '' : val; wrap.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', !off && c.textContent === val)); };
 window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
@@ -462,7 +463,7 @@ const PROFILE_FIELDS = [
   ['role', 'What they do (learning / work)', 'text', false],
   ['workType', 'Working or learning', 'select:,Working,Learning', false],
   ['learnTerm', 'Learner', 'select:,Short-term learner,Long-term learner', false],
-  ['town', 'In town or out of town', 'select:,In town,Out of town', false],
+  ['town', 'In town or out of town', 'chips:In town,Out of town', false],
   ['rav', 'Rav', 'text', false],
   ['minyan', 'Minyan', 'text', false],
   ['koveaItim', 'Kovea itim', 'text', false],
@@ -485,6 +486,10 @@ async function viewForm(editId) {
     if (type === 'textarea') return `<label class="field">${label}<textarea name="${k}">${esc(v)}</textarea></label>`;
     if (type === 'selecthashkafa') {
       return `<label class="field">${label}<select name="${k}"><option value=""></option>${HASHKAFA_ORDER.map(h => `<option ${v === h ? 'selected' : ''}>${h}</option>`).join('')}</select></label>`;
+    }
+    if (type.startsWith('chips:')) {
+      const opts = type.slice(6).split(',');
+      return `<div class="field chipfield"><span class="flabel">${label}</span><input type="hidden" name="${k}" value="${esc(v)}"><div class="townchips">${opts.map(o => `<button type="button" class="chip ${v === o ? 'on' : ''}" onclick="chipPick(this,'${o}')">${esc(o)}</button>`).join('')}</div></div>`;
     }
     if (type.startsWith('select:')) {
       const opts = type.slice(7).split(',');
