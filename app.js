@@ -481,9 +481,13 @@ async function viewForm(editId) {
         <input type="file" id="fphoto" accept="image/*">
       </div>
       ${fields}
-      <label class="field" style="${window.__cs ? 'display:none' : ''}">Resume - choose a file (optional)
-        <input type="file" id="fresume" accept=".pdf,.doc,.docx,.txt">
-      </label>
+      <div class="field">Resume (optional). Saved exactly as you attach it. Nothing is read or rewritten.
+        <div class="btnrow" style="margin-top:6px">
+          <label class="btn ghost" style="cursor:pointer">Choose file<input type="file" id="fresume" accept=".pdf,.doc,.docx,.txt,image/*" style="display:none"></label>
+          <label class="btn ghost" style="cursor:pointer">Take a picture<input type="file" id="fresumecam" accept="image/*" capture="environment" style="display:none"></label>
+        </div>
+        <div class="small muted" id="fresumeName"></div>
+      </div>
       ${p.resumeName ? `<div class="small muted">A resume file is saved: ${esc(p.resumeName)}. Choosing a new one replaces it.</div>` : ''}
       ${!editId ? `
       <div class="field">
@@ -509,6 +513,7 @@ async function viewForm(editId) {
     document.getElementById('pphint').textContent = 'Tap the photo to change it';
   });
   updateNewAudioWrap();
+  ['fresume', 'fresumecam'].forEach(i => document.getElementById(i).addEventListener('change', e => { const f = e.target.files[0]; document.getElementById('fresumeName').textContent = f ? 'Attached: ' + f.name : ''; const o = document.getElementById(i === 'fresume' ? 'fresumecam' : 'fresume'); if (f) o.value = ''; }));
   document.getElementById('pform').addEventListener('submit', async e => {
     e.preventDefault();
     const form = e.target;
@@ -542,7 +547,7 @@ async function viewForm(editId) {
     }
     const photoFile = document.getElementById('fphoto').files[0];
     if (photoFile) prof.photo = await resizePhoto(photoFile);
-    const resumeFile = document.getElementById('fresume').files[0];
+    const resumeFile = document.getElementById('fresume').files[0] || document.getElementById('fresumecam').files[0];
     if (resumeFile) {
       prof.resumeName = resumeFile.name;
       prof.resumeBlob = resumeFile;
