@@ -387,7 +387,7 @@ async function render() {
 }
 
 let _plistFilter = 'all', _plistQ = '';
-let _pf = { learnTerm: '', sect: '', town: '', city: '' }, _pfOpen = false;
+let _pf = { learnTerm: '', workType: '', town: '', city: '' }, _pfOpen = false;
 const _pfActive = () => Object.values(_pf).filter(Boolean).length;
 async function viewProfiles() {
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -397,6 +397,8 @@ async function viewProfiles() {
     if (_plistFilter === 'girls' && p.gender !== 'F') return false;
     if (_plistFilter === 'unset' && (p.gender === 'M' || p.gender === 'F')) return false;
     if (_pf.learnTerm && p.learnTerm !== _pf.learnTerm) return false;
+    if (_pf.workType && p.workType !== _pf.workType) return false;
+    if (_pf.town && p.town !== _pf.town) return false;
     if (_pf.city.trim() && !String(p.location || '').toLowerCase().includes(_pf.city.trim().toLowerCase())) return false;
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
@@ -412,12 +414,14 @@ async function viewProfiles() {
     <details class="filterbox" ${_pfOpen || _pfActive() ? 'open' : ''} ontoggle="_pfOpen=this.open"><summary>Filters${_pfActive() ? ` (${_pfActive()} on)` : ''}</summary>
       <div class="filtergrid">
         <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">Working or learning<select onchange="pfSet('workType',this.value)"><option value="">Any</option>${['Working', 'Learning'].map(o => `<option ${_pf.workType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">In town or out of town<select onchange="pfSet('town',this.value)"><option value="">Any</option>${['In town', 'Out of town'].map(o => `<option ${_pf.town === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
-      <div class="small muted">Matches any part of "Where they live", so "Lake" finds Lakewood. Profiles missing that detail are hidden while a filter is on.</div>
+      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Profiles missing a detail are hidden while that filter is on.</div>
       ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
     </details>
-    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',sect:'',town:'',city:''};plistFilter('all')">Show all</a></div>` : ''}
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:''};plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -435,7 +439,7 @@ async function viewProfiles() {
   document.getElementById('pq').addEventListener('input', e => { _plistQ = e.target.value; viewProfiles(); });
 }
 window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById('pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
-window.pfClear = function () { _pf = { learnTerm: '', sect: '', town: '', city: '' }; viewProfiles(); };
+window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
@@ -448,7 +452,9 @@ const PROFILE_FIELDS = [
   ['community', 'Community / neighborhood', 'text', false],
   ['hashkafa', 'Hashkafa', 'selecthashkafa', false],
   ['role', 'What they do (learning / work)', 'text', false],
+  ['workType', 'Working or learning', 'select:,Working,Learning', false],
   ['learnTerm', 'Learner', 'select:,Short-term learner,Long-term learner', false],
+  ['town', 'In town or out of town', 'select:,In town,Out of town', false],
   ['rav', 'Rav', 'text', false],
   ['minyan', 'Minyan', 'text', false],
   ['koveaItim', 'Kovea itim', 'text', false],
@@ -659,7 +665,9 @@ async function viewProfile(id) {
         ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
         ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
         ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
+        ${p.workType ? `<div class="k">Working or learning</div><div>${esc(p.workType)}</div>` : ''}
         ${p.learnTerm ? `<div class="k">Learner</div><div>${esc(p.learnTerm)}</div>` : ''}
+        ${p.town ? `<div class="k">Town</div><div>${esc(p.town)}</div>` : ''}
         ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
         ${p.minyan ? `<div class="k">Minyan</div><div>${esc(p.minyan)}</div>` : ''}
         ${p.koveaItim ? `<div class="k">Kovea itim</div><div>${esc(p.koveaItim)}</div>` : ''}
