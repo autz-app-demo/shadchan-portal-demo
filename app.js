@@ -874,6 +874,7 @@ function sendFields(p) {
   add('name', 'Name', nm(p));
   const a = ageOf(p);
   if (a != null) add('age', ageFromDob(p.dob) != null ? 'Age (from date of birth)' : 'Age (as entered, does not update)', a);
+  add('dob', 'Date of birth', p.dob);
   add('height', 'Height', heightText(p));
   add('location', 'Where they live', p.location);
   add('hashkafa', 'Hashkafa', p.hashkafa);
@@ -893,7 +894,7 @@ function sendFields(p) {
   return f;
 }
 const SEND_GROUPS = [
-  { id: 'details', label: 'Profile', note: 'Everything on the profile, including the synopsis, personality and background. Age is sent, not the date of birth. Private notes are never included.', keys: ['name', 'age', 'height', 'location', 'hashkafa', 'school', 'phoneType', 'workType', 'learnTerm', 'town', 'movies', 'music', 'lookingFor', 'personality', 'family', 'summary'] },
+  { id: 'details', label: 'Profile', note: 'Everything on the profile, including the synopsis, personality and background. The date of birth is included when entered. Private notes are never included.', keys: ['name', 'age', 'dob', 'height', 'location', 'hashkafa', 'school', 'phoneType', 'workType', 'learnTerm', 'town', 'movies', 'music', 'lookingFor', 'personality', 'family', 'summary'] },
   { id: 'resume', label: 'Resume', note: 'The resume as saved.', keys: ['resumeText', 'resumeName'] }
 ];
 function sendGroupKeys(p, g) { const have = new Set(sendFields(p).map(x => x.k)); return g.keys.filter(k => have.has(k)); }
