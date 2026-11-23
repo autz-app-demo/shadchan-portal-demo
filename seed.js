@@ -128,7 +128,7 @@ const SEED_PROFILES = [
     koveaItim: '', music: 'Jewish music', movies: 'No',
     personality: 'Gentle, family-oriented, great cook.',
     family: 'Heimish Monsey family, married siblings nearby.',
-    lookingFor: 'A heimish or chassidish boy 22-26, working with kovea itim, warm personality.',
+    lookingFor: 'A heimish or chassidish boy 22-26, warm personality.',
     summary: 'Sweet heimish girl who wants a warm, lively home.',
     resumeText: 'Chaya Friedman\nMonsey, NY\n\nEducation: Bais Rochel; seminary (fictional).\nWork: Administrative secretary, chesed organization.\nReferences available on request.',
     photoColor: '#7a3b2e', openToRelocate: false
