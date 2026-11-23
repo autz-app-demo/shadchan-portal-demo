@@ -844,7 +844,6 @@ async function viewAsk() {
         <button class="btn" onclick="runAsk()">Suggest 3 ${saved.have === 'M' ? 'girls' : 'boys'}</button>
         <button class="btn subtle" id="rec-ask" onclick="toggleRec('ask')">Record voice note</button>
       </div>
-      <p class="small" style="margin-top:10px">Or ask a person instead of the matcher: <a href="#/requests">request profiles from another shadchan</a> - they pick profiles from their own list; you never see their whole database.</p>
       <div class="small muted" id="askAudioNote">${window._askAudio ? 'A voice note is attached to this search below. ' : ''}Voice notes are kept for playback only and are not transcribed. The suggestions use your typed description.</div>
       <div id="askAudioSlot">${window._askAudio ? '<audio controls id="askAudioPlayer"></audio>' : ''}</div>
     </div>
@@ -1036,35 +1035,13 @@ window.resetDemo = async function () {
 
 /* ---- Shadchan-to-shadchan requests (fictional demo of the flow) ---- */
 async function viewRequests() {
-  const reqs = (await storeAll('requests')).sort((a, b) => b.ts - a.ts);
   app.innerHTML = `
-    <h2>Requests between shadchanim</h2>
-    <div class="banner info">Ask another shadchan: "I'm looking for ${3} people who fit this description." They answer with profiles they choose from their own list - you never see their whole database.</div>
+    <h2>Send profiles to a shadchan</h2>
+    <div class="banner warn">Not available in this demo. This demo is one browser on one device, so it cannot deliver anything to another shadchan.</div>
     <div class="card">
-      <label class="field">I am looking for
-        <select id="rqSeek">
-          <option value="F">Girls</option>
-          <option value="M">Boys</option>
-        </select>
-      </label>
-      <label class="field">How many
-        <select id="rqCount"><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-      </label>
-      <label class="field">Describe who would fit
-        <textarea id="rqDesc" placeholder="Example: yeshivish girls 20-24 in the New York area who are looking for a full-time learner"></textarea>
-      </label>
-      <button class="btn" onclick="saveRequest()">Save request</button>
-      <p class="small muted">Nothing is sent in this demo - sending to a real shadchan needs the hosted version with accounts. You can preview exactly what the other shadchan would see.</p>
-    </div>
-    ${reqs.map(r => `
-      <a class="card pcard" href="#/request/${r.id}">
-        <div class="info">
-          <div class="name">Looking for ${r.count} ${r.seek === 'F' ? 'girls' : 'boys'}</div>
-          <div class="sub">${esc(r.desc)}</div>
-          <div class="small muted">${fmtWhen(r.ts)} &middot; Not sent (demo)</div>
-        </div>
-      </a>`).join('') || '<p class="muted">No requests yet.</p>'}
-  `;
+      <p>In the account version, each shadchan has a private login and their own list. You select one or more profiles, search for a shadchan who has chosen to be listed, pick copy or live, and send. Only the shareable package goes (resume, picture, synopsis, what they seek). Private notes never do, and nobody sees anyone's whole list.</p>
+      <p class="small muted">There is no request feature. Shadchanim ask each other privately outside the app.</p>
+    </div>`;
 }
 window.saveRequest = async function () {
   const seek = document.getElementById('rqSeek').value;
