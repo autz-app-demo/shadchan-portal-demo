@@ -77,11 +77,16 @@ function initials(name) {
   if (!name || !name.trim()) return '?';
   return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
+// Clearly-labelled cartoon illustration for fictional demo profiles. It is never stored in the profile and never
+// shared: sharing code reads only p.photo and the photos store. A real photo always wins.
+function illusOf(p) { return (!p.photo && window.SEED_ILLUSTRATIONS && window.SEED_ILLUSTRATIONS[p.id]) || ''; }
+function illusBg(p) { const m = /fill%3D%22%23([0-9A-Fa-f]{6})/.exec(illusOf(p)); return m ? '#' + m[1] : '#eee'; }
 function avatarHTML(p, cls) {
-  const style = p.photo
-    ? `background-image:url('${p.photo}')`
+  const img = p.photo || illusOf(p);
+  const style = img
+    ? `background-image:url('${img}')`
     : `background:${p.photoColor || '#0f4c46'}`;
-  return `<div class="avatar ${cls || ''}" style="${style}">${p.photo ? '' : esc(initials(p.name))}</div>`;
+  return `<div class="avatar ${cls || ''}" style="${style}">${img ? '' : esc(initials(p.name))}</div>`;
 }
 function setActiveNav(key) {
   document.querySelectorAll('#bottomnav a').forEach(a => {
@@ -296,8 +301,8 @@ async function viewProfiles() {
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
-        ${p.photo
-          ? `<div class="pphoto" style="background-image:url('${p.photo}')"></div>`
+        ${(p.photo || illusOf(p))
+          ? `<div class="pphoto" style="background-image:url('${p.photo || illusOf(p)}')"></div>`
           : `<div class="pphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
         <div class="pbody">
           <div class="pname">${esc(nm(p))}${ageSfx(p)}</div>
@@ -369,7 +374,7 @@ function galControlsHTML() {
   return `<div class="galbox"><div class="galhead">Photos <span id="galcount" class="muted"></span></div>
     <div class="galbtns"><label class="btn subtle gbtn">Choose photos<input type="file" accept="image/*" multiple id="galfiles" hidden></label><label class="btn subtle gbtn">Take a photo<input type="file" accept="image/*" capture="environment" id="galcam" hidden></label></div>
     <div class="galstrip" id="galstrip"></div>
-    <div class="small muted">All photos stay here as you added them. Tap one to choose it as the profile picture and crop it. Only the cropped profile picture is ever shared.</div></div>`;
+    <div class="small muted">All photos stay here as you added them. Tap one to choose it as the profile picture and crop it. Photos are shared only when you tick them in Share package.</div></div>`;
 }
 async function galInit(p, editId) {
   _G = { profileId: editId || null, photos: [], chosenId: p.photoId || null, croppedUrl: null, crop: p.photoCrop || null, editId };
@@ -612,9 +617,10 @@ async function viewProfile(id) {
   goodIdeas.sort((a, b) => b.f.ts - a.f.ts);
   app.innerHTML = `
     <div class="hero">
-      ${p.photo
-        ? `<div class="hphoto" style="background-image:url('${p.photo}')"></div>`
+      ${(p.photo || illusOf(p))
+        ? `<div class="hphoto" style="background-image:url('${p.photo || illusOf(p)}')${p.photo ? '' : ';background-size:auto 100%;background-repeat:no-repeat;background-position:center;background-color:' + illusBg(p)}"></div>`
         : `<div class="hphoto noimg" style="background:${p.photoColor || '#0d443e'}">${esc(initials(p.name))}</div>`}
+      ${illusOf(p) ? '<span class="illchip">Illustration, not a photo</span>' : ''}
       <div class="hoverlay">
         <div class="hname">${esc(nm(p))}</div>
         <div class="hsub">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${ageFromDob(p.dob) != null ? ageFromDob(p.dob) + ' years old' : 'age not added'} &middot; ${esc(p.location || '')}</div>
