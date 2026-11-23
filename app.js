@@ -28,13 +28,14 @@ function openDB() {
   return _dbp;
 }
 function reqP(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-async function storeAll(n) { const db = await openDB(); return reqP(db.transaction(n).objectStore(n).getAll()); }
-async function storeGet(n, k) { const db = await openDB(); return reqP(db.transaction(n).objectStore(n).get(k)); }
-async function storePut(n, v) { const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).put(v)); }
-async function storeDel(n, k) { const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).delete(k)); }
-async function storeClear(n) { const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).clear()); }
+async function storeAll(n) { if (window.__cs && n !== 'requests') return window.__cs.all(n); const db = await openDB(); return reqP(db.transaction(n).objectStore(n).getAll()); }
+async function storeGet(n, k) { if (window.__cs && n !== 'requests') return window.__cs.get(n, k); const db = await openDB(); return reqP(db.transaction(n).objectStore(n).get(k)); }
+async function storePut(n, v) { if (window.__cs && n !== 'requests') return window.__cs.put(n, v); const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).put(v)); }
+async function storeDel(n, k) { if (window.__cs && n !== 'requests') return window.__cs.del(n, k); const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).delete(k)); }
+async function storeClear(n) { if (window.__cs && n !== 'requests') return window.__cs.clear(n); const db = await openDB(); return reqP(db.transaction(n, 'readwrite').objectStore(n).clear()); }
 
 async function ensureSeed() {
+  if (window.__cs) return;
   const existing = await storeAll('profiles');
   if (!existing || existing.length === 0) {
     for (const p of SEED_PROFILES) {
@@ -117,6 +118,14 @@ function parseAgeRange(text) {
   return [Math.min(a, b), Math.max(a, b)];
 }
 
+function heightText(p) {
+  const ft = p.heightFt, inch = p.heightIn;
+  const hf = ft !== undefined && ft !== null && ft !== '', hi = inch !== undefined && inch !== null && inch !== '';
+  if (hf && hi) return `${ft}'${inch}"`;
+  if (hf) return `${ft}' (inches not entered)`;
+  if (hi) return `feet not entered, ${inch} in`;
+  return p.height || '';
+}
 function nm(p) { return (p && p.name) || 'Unnamed profile'; }
 function ageSfx(p) { const a = ageFromDob(p.dob); return a != null ? ', ' + a : ''; }
 function firstName(p) { return (p.name || 'this person').split(' ')[0]; }
@@ -200,7 +209,6 @@ function scorePair(subject, cand, weights) {
     if (boy.location === girl.location) { s = 1; line = `Both in ${boy.location}`; }
     else if (bm === gm) { s = 0.85; line = `Same area (${boy.location} and ${girl.location})`; }
     else if (TRISTATE.includes(bm) && TRISTATE.includes(gm)) { s = 0.6; line = `Both tri-state (${boy.location} / ${girl.location})`; }
-    else if (boy.openToRelocate || girl.openToRelocate) { s = 0.55; line = `${boy.location} and ${girl.location} - one is open to relocating`; }
     else { s = 0.3; line = `Different cities (${boy.location} / ${girl.location})`; concern = true; }
     factors.push({ key: 'location', score: s, line, concern });
   }
@@ -389,6 +397,7 @@ async function viewProfiles() {
   const list = profiles.filter(p => {
     if (_plistFilter === 'boys' && p.gender !== 'M') return false;
     if (_plistFilter === 'girls' && p.gender !== 'F') return false;
+    if (_plistFilter === 'unset' && (p.gender === 'M' || p.gender === 'F')) return false;
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
   });
@@ -398,7 +407,9 @@ async function viewProfiles() {
       <button class="chip ${_plistFilter === 'all' ? 'on' : ''}" onclick="plistFilter('all')">All (${profiles.length})</button>
       <button class="chip ${_plistFilter === 'boys' ? 'on' : ''}" onclick="plistFilter('boys')">Boys (${profiles.filter(p => p.gender === 'M').length})</button>
       <button class="chip ${_plistFilter === 'girls' ? 'on' : ''}" onclick="plistFilter('girls')">Girls (${profiles.filter(p => p.gender === 'F').length})</button>
+      ${profiles.some(p => p.gender !== 'M' && p.gender !== 'F') ? `<button class="chip ${_plistFilter === 'unset' ? 'on' : ''}" onclick="plistFilter('unset')">Gender not set (${profiles.filter(p => p.gender !== 'M' && p.gender !== 'F').length})</button>` : ''}
     </div>
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -421,7 +432,8 @@ const PROFILE_FIELDS = [
   ['name', 'Full name', 'text', false],
   ['gender', 'Boy or girl', 'select:This profile is a,Boy,Girl', false],
   ['dob', 'Date of birth', 'date', false],
-  ['height', 'Height', 'text', false],
+  ['heightFt', 'Height: feet', 'number', false],
+  ['heightIn', 'Height: inches (0 to 11)', 'number', false],
   ['location', 'Where they live', 'text', false],
   ['community', 'Community / neighborhood', 'text', false],
   ['hashkafa', 'Hashkafa', 'selecthashkafa', false],
@@ -439,6 +451,7 @@ const PROFILE_FIELDS = [
 
 async function viewForm(editId) {
   const p = editId ? await storeGet('profiles', editId) : {};
+  if (editId && p && p.height && p.heightFt === undefined) { const m = String(p.height).match(/^\s*(\d)\s*['\u2019]\s*(\d{1,2})/); if (m) { p.heightFt = m[1]; p.heightIn = m[2]; } }
   if (editId && !p) { location.hash = '#/'; return; }
   const fields = PROFILE_FIELDS.map(([k, label, type, req]) => {
     const v = p[k] || '';
@@ -468,10 +481,7 @@ async function viewForm(editId) {
         <input type="file" id="fphoto" accept="image/*">
       </div>
       ${fields}
-      <label class="field">Resume - paste text (optional)
-        <textarea name="resumeText" placeholder="Or upload a resume file below">${esc(p.resumeText || '')}</textarea>
-      </label>
-      <label class="field">Resume - upload a file (optional)
+      <label class="field" style="${window.__cs ? 'display:none' : ''}">Resume - choose a file (optional)
         <input type="file" id="fresume" accept=".pdf,.doc,.docx,.txt">
       </label>
       ${p.resumeName ? `<div class="small muted">A resume file is saved: ${esc(p.resumeName)}. Choosing a new one replaces it.</div>` : ''}
@@ -481,15 +491,13 @@ async function viewForm(editId) {
         <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. Turning what you say into filled-in fields comes later, with your review first.</div>
         <div id="newAudioWrap"></div>
       </div>` : ''}
-      <label class="field" style="display:flex;gap:8px;align-items:center">
-        <input type="checkbox" name="openToRelocate" ${p.openToRelocate ? 'checked' : ''} style="width:18px;height:18px;margin:0"> Open to relocating
-      </label>
       <div class="btnrow">
         <button type="submit" class="btn">${editId ? 'Save changes' : 'Add profile'}</button>
         <a class="btn subtle" href="${editId ? '#/profile/' + editId : '#/'}">Cancel</a>
       </div>
     </form>
   `;
+  if (window.__afterForm) window.__afterForm(editId);
   document.getElementById('fphoto').addEventListener('change', e => {
     const f = e.target.files[0];
     if (!f) return;
@@ -514,6 +522,9 @@ async function viewForm(editId) {
       if (empty) { missing.push(label); el.classList.add('field-missing'); }
     }
     const missBox = document.getElementById('formMissing');
+    { const f = form.querySelector('[name="heightFt"]').value.trim(), i = form.querySelector('[name="heightIn"]').value.trim();
+      const bad = (f !== '' && !(/^\d+$/.test(f) && +f >= 1 && +f <= 8)) || (i !== '' && !(/^\d+$/.test(i) && +i >= 0 && +i <= 11));
+      if (bad) { missBox.textContent = 'Height: feet should be a whole number from 1 to 8 and inches a whole number from 0 to 11. You can also leave either one empty.'; missBox.style.display = ''; missBox.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } }
     if (missing.length) {
       missBox.textContent = 'Please fill in before adding: ' + missing.join(', ') + '.';
       missBox.style.display = '';
@@ -529,7 +540,6 @@ async function viewForm(editId) {
       if (type.startsWith('select:') && (k === 'gender')) v = v === 'M' ? 'M' : v === 'F' ? 'F' : '';
       prof[k] = typeof v === 'string' ? v.trim() : v;
     }
-    prof.openToRelocate = !!fd.get('openToRelocate');
     const photoFile = document.getElementById('fphoto').files[0];
     if (photoFile) prof.photo = await resizePhoto(photoFile);
     const resumeFile = document.getElementById('fresume').files[0];
@@ -538,7 +548,7 @@ async function viewForm(editId) {
       prof.resumeBlob = resumeFile;
     }
     try {
-      await storePut('profiles', prof);
+      await storePut('profiles', prof); _plistFilter = 'all'; _plistQ = '';
       if (window._newAudio) {
         await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: window._newAudio, mime: window._newAudio.type, ts: Date.now() });
         window._newAudio = null;
@@ -615,7 +625,7 @@ async function viewProfile(id) {
       <div class="hoverlay">
         <div class="hname">${esc(nm(p))}</div>
         <div class="hsub">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${ageFromDob(p.dob) != null ? ageFromDob(p.dob) + ' years old' : 'age not added'} &middot; ${esc(p.location || '')}</div>
-        <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span>${p.openToRelocate ? '<span class="htag">Open to relocating</span>' : ''}</div>
+        <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span></div>
       </div>
     </div>
     <div class="card">
@@ -628,7 +638,7 @@ async function viewProfile(id) {
       <h3 style="margin-top:0">The basics</h3>
       <div class="kv">
         ${p.dob ? `<div class="k">Date of birth</div><div>${esc(p.dob)}</div>` : ''}
-        ${p.height ? `<div class="k">Height</div><div>${esc(p.height)}</div>` : ''}
+        ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
         ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
         ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
         ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
@@ -788,6 +798,7 @@ async function viewMatch(id) {
       </div>`).join('') || `<p class="muted">No ${seeking} in the system yet.</p>`}
     <p class="no-print"><a class="btn subtle" href="#/profile/${subject.id}">Back to ${esc(firstName(subject))}</a></p>
   `;
+  if (window.__afterMatch) window.__afterMatch({ subjectId: subject.id, candidateIds: all.filter(c => c.id !== subject.id && subject.gender && c.gender && c.gender !== subject.gender).map(c => c.id) });
 }
 
 /* ---- Ask a match (ad hoc description) ---- */
@@ -837,6 +848,7 @@ async function viewAsk() {
     </div>
     ${resultsHTML}
   `;
+  if (window.__afterAsk) window.__afterAsk();
   if (window._askAudio) {
     const el = document.getElementById('askAudioPlayer');
     if (el) el.src = URL.createObjectURL(window._askAudio);
@@ -931,7 +943,7 @@ function buildPackageInner(p, sel) {
       </div>
       <div class="kv">
         ${p.dob ? `<div class="k">Date of birth</div><div>${esc(p.dob)}</div>` : ''}
-        ${p.height ? `<div class="k">Height</div><div>${esc(p.height)}</div>` : ''}
+        ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
         ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
         ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
         ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
@@ -1138,6 +1150,7 @@ window.previewReply = async function (rid) {
 /* ---------------- boot ---------------- */
 window.addEventListener('hashchange', render);
 (async function boot() {
+  if (window.__ready) await window.__ready;
   await ensureSeed();
   if (!location.hash) location.hash = '#/';
   render();
