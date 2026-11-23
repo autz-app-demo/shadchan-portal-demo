@@ -1,6 +1,6 @@
 :root{
   --ink:#1f2f2c;
-  --ink-soft:#5b6b68;
+  --ink-soft:#43524f;
   --paper:#f4f1e9;
   --card:#ffffff;
   --accent:#0d443e;
@@ -20,7 +20,7 @@ body{
   color:var(--ink);
   font-size:16px;
   line-height:1.45;
-  -webkit-font-smoothing:antialiased;
+  -webkit-font-smoothing:auto;text-rendering:optimizeLegibility;
 }
 #topbar{
   background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 100%);
@@ -355,3 +355,32 @@ label.field textarea{min-height:76px;resize:vertical}
 .croplbl{display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:600;margin-bottom:6px}
 .croplbl input{flex:1}
 @media(min-width:900px){.galstrip{grid-template-columns:repeat(5,1fr)}}
+
+/* Desktop legibility: darker secondary text, larger small text, normal font smoothing */
+@media(min-width:900px){
+  body{font-size:17px;line-height:1.5}
+  .small,.pcard .sub,.sugg .sub,.idearow .sub,.sharefield .hint,.photopick .pp-hint{font-size:15px}
+  .ptile .pname{font-size:16px}.ptile .psub{font-size:14.5px}
+  .kv,.sharefield,.filterbox summary{font-size:16px}
+  label.field,.heightrow .hlabel,.chipfield .flabel,.filterbox .flabel,.croplbl{font-size:15px;color:var(--ink)}
+  .tag{font-size:13px}.lockline{font-size:15px}.reasons li{font-size:16px}
+  .note .when,.idearow .when{font-size:14px}
+  .muted{color:var(--ink-soft)}
+}
+.filterbox .flabel{padding-top:2px}
+.filterbox>.field:first-child{padding-top:12px}
+/* Send */
+.flabel{display:block;font-size:14px;font-weight:700;color:var(--ink);margin-bottom:6px}
+.sendhead{display:flex;align-items:center;gap:12px}
+.sendcard{margin-bottom:12px}
+#sendq{width:100%;min-height:46px;font-size:16px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;font-family:inherit}
+.senddrop{margin:6px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.senditem{display:block;width:100%;text-align:left;min-height:44px;padding:10px 14px;border:0;border-bottom:1px solid var(--line);background:#fff;font-size:15.5px;font-family:inherit;color:var(--ink);cursor:pointer}
+.senditem:last-child{border-bottom:0}
+.sendto{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sendphotos{display:flex;flex-wrap:wrap;gap:10px}
+.sphoto{display:flex;flex-direction:column;align-items:center;gap:4px;width:92px;text-align:center;cursor:pointer;position:relative}
+.sphoto input{position:absolute;top:4px;left:4px;width:22px;height:22px;z-index:1}
+.sph{display:block;width:92px;height:92px;border-radius:12px;background-size:cover;background-position:center;background-color:#ddd;border:1px solid var(--line)}
+.sph.big{width:110px;height:110px}
+.sendval{word-break:break-word}
