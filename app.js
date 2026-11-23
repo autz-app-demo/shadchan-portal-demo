@@ -648,7 +648,6 @@ async function viewProfile(id) {
         ${p.dob ? `<div class="k">Date of birth</div><div>${esc(p.dob)}</div>` : ''}
         ${(!p.dob && p.ageEntered) ? `<div class="k">Age (as entered)</div><div>${esc(p.ageEntered)} (does not update)</div>` : ''}
         ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
-        ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
         ${p.school ? `<div class="k">${p.gender === 'M' ? 'Yeshiva' : p.gender === 'F' ? 'School' : 'Yeshiva or school'}</div><div>${esc(p.school)}</div>` : ''}
         ${p.workType ? `<div class="k">Working or learning</div><div>${esc(p.workType)}</div>` : ''}
         ${p.learnTerm ? `<div class="k">Learner</div><div>${esc(p.learnTerm)}</div>` : ''}
