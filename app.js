@@ -70,10 +70,6 @@ function ageFromDob(dob) {
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
   return a;
 }
-function dobFromAge(a) {
-  const now = new Date();
-  return (now.getFullYear() - a) + '-06-15';
-}
 function fmtWhen(ts) {
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
@@ -93,27 +89,11 @@ function setActiveNav(key) {
   });
 }
 
-/* ---------------- matching engine (rule-based, on-device) ---------------- */
+/* ---------------- profile constants ---------------- */
 const HASHKAFA_ORDER = ['Chassidish', 'Heimish', 'Yeshivish', 'Litvish', 'Modern Orthodox Machmir', 'Modern Orthodox', 'YU/Modern'];
-const MOVIE_RANK = { 'No': 0, 'Rarely': 1, 'Occasionally': 2, 'Regularly': 3 };
-const METRO = { 'Lakewood, NJ': 'nj', 'Teaneck, NJ': 'nj', 'Flatbush, Brooklyn': 'nyc', 'Boro Park, Brooklyn': 'nyc', 'Queens, NY': 'nyc', 'Five Towns, NY': 'nyc', 'Monsey, NY': 'rockland', 'Baltimore, MD': 'baltimore' };
-const TRISTATE = ['nj', 'nyc', 'rockland'];
-const STOPWORDS = new Set(['with', 'that', 'this', 'from', 'they', 'them', 'their', 'have', 'will', 'want', 'wants', 'looking', 'someone', 'years', 'year', 'good', 'very', 'girl', 'boy', 'nice', 'values', 'home', 'live']);
 
-const DEFAULT_WEIGHTS = { age: 1, hashkafa: 1, lifestyle: 1, learning: 1, location: 1, keywords: 1 };
-async function getWeights() {
-  const r = await storeGet('meta', 'weights');
-  return (r && r.w) ? r.w : Object.assign({}, DEFAULT_WEIGHTS);
-}
 
-function hIdx(h) { const i = HASHKAFA_ORDER.indexOf(h); return i < 0 ? 3 : i; }
 
-function parseAgeRange(text) {
-  const m = String(text || '').toLowerCase().match(/\b(1[89]|2\d|3\d)\s*(?:-|\u2013|to)\s*(1[89]|2\d|3\d|4\d)\b/);
-  if (!m) return null;
-  const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
-  return [Math.min(a, b), Math.max(a, b)];
-}
 
 function heightText(p) {
   const ft = p.heightFt, inch = p.heightIn;
@@ -127,115 +107,9 @@ function nm(p) { return (p && p.name) || 'Unnamed profile'; }
 function ageSfx(p) { const a = ageFromDob(p.dob); return a != null ? ', ' + a : ''; }
 function firstName(p) { return (p.name || 'this person').split(' ')[0]; }
 
-function scorePair(subject, cand, weights) {
-  if (!subject || !cand || !subject.gender || !cand.gender || subject.gender === cand.gender) return null;
-  const boy = subject.gender === 'M' ? subject : cand;
-  const girl = subject.gender === 'M' ? cand : subject;
-  const factors = [];
 
-  // age: scored only against explicitly stated age preferences; no hidden convention
-  if (boy.dob && girl.dob) {
-    const ba = ageFromDob(boy.dob), ga = ageFromDob(girl.dob);
-    const boyRange = parseAgeRange(boy.lookingFor);
-    const girlRange = parseAgeRange(girl.lookingFor);
-    const parts = [];
-    const scores = [];
-    if (girlRange) {
-      const inR = ba >= girlRange[0] && ba <= girlRange[1];
-      const near = !inR && ba >= girlRange[0] - 2 && ba <= girlRange[1] + 2;
-      scores.push(inR ? 1 : near ? 0.55 : 0.2);
-      parts.push({ line: `She is looking for ages ${girlRange[0]}-${girlRange[1]}; he is ${ba}${inR ? ' - inside her range' : ' - outside her range'}`, concern: !inR && !near });
-    }
-    if (boyRange) {
-      const inR = ga >= boyRange[0] && ga <= boyRange[1];
-      const near = !inR && ga >= boyRange[0] - 2 && ga <= boyRange[1] + 2;
-      scores.push(inR ? 1 : near ? 0.55 : 0.2);
-      parts.push({ line: `He is looking for ages ${boyRange[0]}-${boyRange[1]}; she is ${ga}${inR ? ' - inside his range' : ' - outside his range'}`, concern: !inR && !near });
-    }
-    if (scores.length) {
-      const s = scores.reduce((a, b) => a + b, 0) / scores.length;
-      factors.push({ key: 'age', score: s, line: parts.map(p => p.line).join('. '), concern: parts.some(p => p.concern) });
-    } else {
-      factors.push({ key: 'age', score: 0.5, line: `Ages ${ba} and ${ga} - neither profile states an age preference, so age is not counted for or against`, concern: false });
-    }
-  }
-
-  // hashkafa
-  if (boy.hashkafa && girl.hashkafa) {
-    const d = Math.abs(hIdx(boy.hashkafa) - hIdx(girl.hashkafa));
-    const s = Math.max(0.15, 1 - 0.22 * d);
-    factors.push({
-      key: 'hashkafa', score: s,
-      line: d === 0 ? `Both ${boy.hashkafa}` : d <= 1 ? `${boy.hashkafa} and ${girl.hashkafa} - close hashkafos` : `Hashkafos differ: ${boy.hashkafa} and ${girl.hashkafa}`,
-      concern: d >= 3
-    });
-  }
-
-  // lifestyle (movies / music)
-  if (boy.movies && girl.movies) {
-    const dm = Math.abs((MOVIE_RANK[boy.movies] != null ? MOVIE_RANK[boy.movies] : 1) - (MOVIE_RANK[girl.movies] != null ? MOVIE_RANK[girl.movies] : 1));
-    let s = Math.max(0.1, 1 - dm * 0.3);
-    if ((boy.music || '').toLowerCase() === (girl.music || '').toLowerCase() && boy.music) s = Math.min(1, s + 0.15);
-    factors.push({
-      key: 'lifestyle', score: s,
-      line: s >= 0.8 ? 'Similar attitude to music and movies' : `Different attitude to movies (${boy.movies} vs ${girl.movies})`,
-      concern: s < 0.5
-    });
-  }
-
-  // learning / work direction
-  const lf = (girl.lookingFor || '').toLowerCase();
-  const role = (boy.role || '').toLowerCase();
-  if (lf && role) {
-    const wantsLearner = /learner|learning|kollel|full-time/.test(lf);
-    const wantsWorking = /working|professional|earner|job/.test(lf);
-    const wantsLearnerEarner = /learner-earner/.test(lf);
-    const isLearner = /learner|kollel|learning|yeshiva|yungerman|rebbe/.test(role);
-    let s = 0.6, line = '', concern = false;
-    if (wantsLearnerEarner && /learner-earner/.test(role)) { s = 1; line = 'She asked for a learner-earner and that is exactly what he is'; }
-    else if (wantsLearner && isLearner) { s = 1; line = `She is looking for a learner and he is learning (${boy.role})`; }
-    else if (wantsWorking && !isLearner) { s = 0.9; line = 'She is looking for someone working, and he is established in work'; }
-    else if (wantsLearner && !isLearner) { s = 0.2; line = 'She is looking for a learner; he is not currently learning full-time'; concern = true; }
-    if (line) factors.push({ key: 'learning', score: s, line, concern });
-  }
-
-  // location
-  if (boy.location && girl.location) {
-    const bm = METRO[boy.location] || 'other', gm = METRO[girl.location] || 'other';
-    let s, line, concern = false;
-    if (boy.location === girl.location) { s = 1; line = `Both in ${boy.location}`; }
-    else if (bm === gm) { s = 0.85; line = `Same area (${boy.location} and ${girl.location})`; }
-    else if (TRISTATE.includes(bm) && TRISTATE.includes(gm)) { s = 0.6; line = `Both tri-state (${boy.location} / ${girl.location})`; }
-    else { s = 0.3; line = `Different cities (${boy.location} / ${girl.location})`; concern = true; }
-    factors.push({ key: 'location', score: s, line, concern });
-  }
-
-  // keyword overlap between what the subject asks for and the candidate
-  const askText = ((subject.lookingFor || '') + ' ' + (subject.summary || '')).toLowerCase();
-  const candText = [cand.role, cand.personality, cand.hashkafa, cand.location, cand.summary, cand.lookingFor].join(' ').toLowerCase();
-  const tokens = askText.split(/[^a-z\-']+/).filter(t => t.length > 3 && !STOPWORDS.has(t));
-  const matched = [...new Set(tokens.filter(t => candText.includes(t)))].filter(t => !/^\d+$/.test(t));
-  if (tokens.length) {
-    const s = Math.min(1, matched.length / 3);
-    factors.push({
-      key: 'keywords', score: s,
-      line: matched.length ? `Matches what ${firstName(subject)} described: ${matched.slice(0, 4).join(', ')}` : `Little overlap with what ${firstName(subject)} described`,
-      concern: matched.length === 0
-    });
-  }
-
-  if (!factors.length) return null;
-  let sw = 0, ws = 0;
-  for (const f of factors) { const w = weights[f.key] || 1; sw += w * f.score; ws += w; }
-  const total = Math.round(100 * sw / ws);
-  const reasons = factors.filter(f => !f.concern && f.line).sort((a, b) => b.score - a.score).slice(0, 4).map(f => f.line);
-  const concerns = factors.filter(f => f.concern && f.line).map(f => f.line);
-  return { total, reasons, concerns };
-}
-
-/* ---------------- feedback / learning ---------------- */
+/* ---------------- saved ideas ---------------- */
 const FB_TAGS = ['Age gap', 'Hashkafa', 'Lifestyle', 'Learning / work', 'Location', 'Personality', 'Other'];
-const TAG_TO_WEIGHT = { 'Age gap': 'age', 'Hashkafa': 'hashkafa', 'Lifestyle': 'lifestyle', 'Learning / work': 'learning', 'Location': 'location', 'Personality': 'keywords', 'Other': 'keywords' };
 const fbState = {};
 
 window.fbVerdict = function (cid, verdict) {
@@ -272,14 +146,6 @@ async function saveFeedback(cid, verdict, tags, comment) {
   await storePut('feedback', { id: uid(), subjectId: sid, candId: cid, verdict, tags, comment, ts: Date.now() });
   fbState[cid] = fbState[cid] || {};
   fbState[cid].saved = verdict;
-  if (verdict === 'no') {
-    const w = await getWeights();
-    for (const t of tags) {
-      const k = TAG_TO_WEIGHT[t];
-      if (k) w[k] = Math.min(2.2, (w[k] || 1) + 0.2);
-    }
-    await storePut('meta', { id: 'weights', w });
-  }
   render();
 }
 
@@ -375,7 +241,7 @@ async function render() {
     if (parts[0] === 'add') return await viewForm(null);
     if (parts[0] === 'edit') return await viewForm(parts[1]);
     if (parts[0] === 'match') return await viewMatch(parts[1]);
-    if (parts[0] === 'ask') return await viewAsk();
+    if (parts[0] === 'ask') { window._findFor = null; window._matchSubject = null; return await viewAsk(); }
     if (parts[0] === 'requests') return await viewRequests();
     if (parts[0] === 'request') return await viewRequest(parts[1]);
     if (parts[0] === 'reply') return await viewReplyPreview(parts[1]);
@@ -887,148 +753,80 @@ window.deleteProfile = async function (id) {
   location.hash = '#/';
 };
 
+/* ---- Find: explicit filters only. No scoring, no ranking, no learning. ---- */
+function findMatches(f, all) {
+  return all.filter(p => {
+    if (!f.have || p.gender !== f.have) return false;
+    if (f.hashkafa && p.hashkafa !== f.hashkafa) return false;
+    if (f.learnTerm && p.learnTerm !== f.learnTerm) return false;
+    if (f.workType && p.workType !== f.workType) return false;
+    if (f.town && p.town !== f.town) return false;
+    if (f.city && f.city.trim() && !String(p.location || '').toLowerCase().includes(f.city.trim().toLowerCase())) return false;
+    if (f.ageMin !== '' || f.ageMax !== '') {
+      const ag = ageFromDob(p.dob);
+      if (ag == null) return false;
+      if (f.ageMin !== '' && ag < Number(f.ageMin)) return false;
+      if (f.ageMax !== '' && ag > Number(f.ageMax)) return false;
+    }
+    return true;
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+const FIND_BLANK = { have: '', hashkafa: '', learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' };
 async function viewMatch(id) {
   const subject = await storeGet('profiles', id);
   if (!subject) { location.hash = '#/'; return; }
+  window._findFor = id;
   window._matchSubject = id;
-  const weights = await getWeights();
+  window._findState = Object.assign({}, FIND_BLANK, { have: subject.gender === 'M' ? 'F' : subject.gender === 'F' ? 'M' : '' });
+  await viewAsk();
+}
+window.findSet = function (k, v, focusId) { window._findState[k] = v; viewAsk().then(() => { if (focusId) { const e = document.getElementById(focusId); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } } }); };
+window.findClear = function () { window._findState = Object.assign({}, FIND_BLANK, { have: window._findState.have }); viewAsk(); };
+window.findIdea = async function (cid) {
+  if (!window._findFor) return;
+  await storePut('feedback', { id: uid(), subjectId: window._findFor, candId: cid, verdict: 'yes', tags: [], comment: '', ts: Date.now() });
+  window._findSaved = window._findSaved || {}; window._findSaved[cid] = true;
+  viewAsk();
+};
+async function viewAsk() {
+  const f = window._findState = window._findState || Object.assign({}, FIND_BLANK);
   const all = await storeAll('profiles');
-  const scored = all
-    .map(c => ({ c, s: scorePair(subject, c, weights) }))
-    .filter(x => x.s)
-    .sort((a, b) => b.s.total - a.s.total);
-  const top = scored.slice(0, 5);
-  const seeking = subject.gender === 'M' ? 'girls' : 'boys';
+  const subject = window._findFor ? all.find(p => p.id === window._findFor) : null;
+  const list = f.have ? findMatches(f, all) : [];
+  const sel = (key, label, opts) => `<label class="field">${label}<select onchange="findSet('${key}',this.value)"><option value="">Any</option>${opts.map(o => `<option ${f[key] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
+  const chip = (key, val, label) => `<button type="button" class="chip ${f[key] === val ? 'on' : ''}" onclick="findSet('${key}', window._findState.${key} === '${val}' ? '' : '${val}')">${label}</button>`;
+  const hint = !f.have ? 'Pick Boy or Girl to see profiles.' : `Showing ${list.length} ${f.have === 'M' ? 'boy' : 'girl'}${list.length === 1 ? '' : 's'} who fit every filter you set, A to Z. Nothing is scored or ranked.`;
   app.innerHTML = `
-    <h2>Ideas for ${esc(nm(subject))}</h2>
-    <div class="banner info">These suggestions come from a simple rules engine on this device - they are ideas for you to review, not verified compatibility. "Good idea" is saved to your list and does not change the ranking. "Not a fit" with reason tags makes those factors count more in later searches on this device. Written comments are saved for you and are not read by the matcher.</div>
-    ${top.map(({ c, s }) => `
+    <h2>${subject ? 'Find for ' + esc(nm(subject)) : 'Find'}</h2>
+    <div class="banner info">Set any filters you like and leave the rest blank. You see the profiles you have entered that fit every filter. There is no scoring, ranking or guessing.${window._findFor ? ' Tap "Save as idea" to keep a profile on this person\'s page.' : ''}</div>
+    <div class="card filterbox">
+      <div class="field"><span class="flabel">Looking for</span><div class="townchips">${chip('have', 'M', 'Boys')}${chip('have', 'F', 'Girls')}</div></div>
+      <div class="filtergrid">
+        <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="fam" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(f.ageMin)}" oninput="findSet('ageMin',this.value,'fam')"><span>to</span><input id="faM" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(f.ageMax)}" oninput="findSet('ageMax',this.value,'faM')"></div></div>
+        <div class="field"><span class="flabel">Town</span><div class="townchips">${chip('town', 'In town', 'In town')}${chip('town', 'Out of town', 'Out of town')}</div></div>
+        ${sel('learnTerm', 'Learner', ['Short-term learner', 'Long-term learner'])}
+        ${sel('workType', 'Working or learning', ['Working', 'Learning'])}
+        ${sel('hashkafa', 'Hashkafa', HASHKAFA_ORDER)}
+        <label class="field">City (typed)<input id="fcity" value="${esc(f.city)}" placeholder="Any city" autocapitalize="words" oninput="findSet('city',this.value,'fcity')"></label>
+      </div>
+      <div class="small muted">City matches any part of "Where they live". Age comes from the date of birth. Profiles missing a detail are left out while that filter is on.</div>
+      <div class="btnrow"><button class="btn subtle" onclick="findClear()">Clear filters</button></div>
+    </div>
+    <div class="small muted" style="margin:8px 2px">${hint}</div>
+    ${list.map(c => `
       <div class="card sugg">
         <div class="top">
           ${avatarHTML(c)}
           <div class="info">
             <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(nm(c))}${ageSfx(c)}</a></div>
-            <div class="sub muted small">${esc(c.location)} &middot; ${esc(c.hashkafa)}</div>
+            <div class="sub muted small">${esc(c.location || '')} &middot; ${esc(c.hashkafa || '')}</div>
           </div>
         </div>
-        <ul class="reasons">
-          ${s.reasons.map(r => `<li>${esc(r)}</li>`).join('')}
-          ${s.concerns.map(r => `<li class="concern">To check: ${esc(r)}</li>`).join('')}
-        </ul>
-        <div class="feedback no-print">
-          ${(fbState[c.id] && fbState[c.id].saved) ? `<div class="small" style="color:var(--ok);font-weight:600">Feedback saved${fbState[c.id].saved === 'yes' ? ' - marked a good idea' : (Object.keys((fbState[c.id].tags) || {}).some(t => fbState[c.id].tags[t]) ? ' - the tagged factors will count more in later searches' : ' - no reason tags picked, so the ranking is unchanged')}.</div>` : ''}
-          <div class="btnrow" style="margin:0 0 6px">
-            <button class="btn ghost" onclick="fbVerdict('${c.id}','yes')">Good idea</button>
-            <button class="btn subtle" onclick="fbVerdict('${c.id}','no')">Not a fit</button>
-          </div>
-          <div id="fbnote-${c.id}" style="display:none">
-            <label class="field small" style="margin:8px 0 4px">A note for yourself about this idea (optional, private)
-              <input type="text" id="fbyn-${c.id}" placeholder="e.g. mention after the Yom Tov"></label>
-            <button class="btn ghost" onclick="fbSaveYesNote('${c.id}')" style="padding:8px 14px;font-size:13.5px">Save note</button>
-          </div>
-          <div id="fbtags-${c.id}" style="display:none">
-            <div class="small muted">Why not? Pick what applies:</div>
-            <div class="tagpick">
-              ${FB_TAGS.map(t => `<button class="chip" id="fbtag-${c.id}-${t.replace(/[^a-z]/gi, '')}" onclick="fbTag('${c.id}','${t}')">${t}</button>`).join('')}
-            </div>
-            <input class="searchbar" id="fbc-${c.id}" placeholder="Optional - say more in your own words">
-            <button class="btn" onclick="fbSaveNo('${c.id}')">Save feedback</button>
-          </div>
-        </div>
-      </div>`).join('') || `<p class="muted">No ${seeking} in the system yet.</p>`}
-    <p class="no-print"><a class="btn subtle" href="#/profile/${subject.id}">Back to ${esc(firstName(subject))}</a></p>
+        ${window._findFor ? `<div class="btnrow no-print" style="margin:8px 0 0">${(window._findSaved || {})[c.id] ? '<span class="small" style="color:var(--ok);font-weight:600">Saved as an idea</span>' : `<button class="btn ghost" onclick="findIdea('${c.id}')">Save as idea</button>`}</div>` : ''}
+      </div>`).join('')}
+    ${subject ? `<p class="no-print"><a class="btn subtle" href="#/profile/${subject.id}">Back to ${esc(firstName(subject))}</a></p>` : ''}
   `;
-  if (window.__afterMatch) window.__afterMatch({ subjectId: subject.id, candidateIds: all.filter(c => c.id !== subject.id && subject.gender && c.gender && c.gender !== subject.gender).map(c => c.id) });
 }
-
-/* ---- Ask a match (ad hoc description) ---- */
-async function viewAsk() {
-  const saved = window._askState || { have: 'M', desc: '' };
-  window._askState = saved;
-  let resultsHTML = '';
-  if (saved.results) {
-    resultsHTML = `
-      <h3>Ideas from your description</h3>
-      ${saved.results.map(({ c, s }) => `
-        <div class="card sugg">
-          <div class="top">
-            ${avatarHTML(c)}
-            <div class="info">
-              <div class="name"><a href="#/profile/${c.id}" style="color:inherit">${esc(nm(c))}${ageSfx(c)}</a></div>
-              <div class="sub muted small">${esc(c.location)} &middot; ${esc(c.hashkafa)}</div>
-            </div>
-          </div>
-          <ul class="reasons">
-            ${s.reasons.map(r => `<li>${esc(r)}</li>`).join('')}
-            ${s.concerns.map(r => `<li class="concern">To check: ${esc(r)}</li>`).join('')}
-          </ul>
-        </div>`).join('') || '<p class="muted">No candidates found.</p>'}
-    `;
-  }
-  app.innerHTML = `
-    <h2>Ask a match</h2>
-    <div class="banner info">Describe someone, even without a profile in the system, and get ideas from the people you have entered. In this demo, describe fictional people only.</div>
-    <div class="card">
-      <label class="field">I have a
-        <select id="askHave">
-          <option value="M" ${saved.have === 'M' ? 'selected' : ''}>Boy</option>
-          <option value="F" ${saved.have === 'F' ? 'selected' : ''}>Girl</option>
-        </select>
-      </label>
-      <label class="field">Describe them
-        <textarea id="askDesc" placeholder="Example: a 24 year old yeshivish boy in Lakewood, learning full time, quiet and warm, looking for a teacher type">${esc(saved.desc)}</textarea>
-      </label>
-      <div class="btnrow">
-        <button class="btn" onclick="runAsk()">Suggest 3 ${saved.have === 'M' ? 'girls' : 'boys'}</button>
-        <button class="btn subtle" id="rec-ask" onclick="toggleRec('ask')">Record voice note</button>
-      </div>
-      <div class="small muted" id="askAudioNote">${window._askAudio ? 'A voice note is attached to this search below. ' : ''}Voice notes are kept for playback only and are not transcribed. The suggestions use your typed description.</div>
-      <div id="askAudioSlot">${window._askAudio ? '<audio controls id="askAudioPlayer"></audio>' : ''}</div>
-    </div>
-    ${resultsHTML}
-  `;
-  if (window.__afterAsk) window.__afterAsk();
-  if (window._askAudio) {
-    const el = document.getElementById('askAudioPlayer');
-    if (el) el.src = URL.createObjectURL(window._askAudio);
-  }
-}
-window.runAsk = async function () {
-  const have = document.getElementById('askHave').value;
-  const desc = document.getElementById('askDesc').value.trim();
-  const st = window._askState = window._askState || {};
-  st.have = have; st.desc = desc;
-  if (!desc) { alert('Type a short description first.'); return; }
-  const lower = desc.toLowerCase();
-  const pseudo = { id: '_adhoc', name: 'the person you described', gender: have, dob: null, hashkafa: null, role: '', location: null, lookingFor: desc, summary: desc, movies: null, music: '' };
-  const ageM = lower.match(/\b(1[89]|2\d|3\d)\b/);
-  if (ageM) pseudo.dob = dobFromAge(parseInt(ageM[1], 10));
-  for (const h of HASHKAFA_ORDER) {
-    if (lower.includes(h.toLowerCase())) { pseudo.hashkafa = h; break; }
-  }
-  if (!pseudo.hashkafa) {
-    if (/yeshivish|yeshiva|bmg|lakewood style/.test(lower)) pseudo.hashkafa = 'Yeshivish';
-    else if (/chassidish|chasidish|hasidic/.test(lower)) pseudo.hashkafa = 'Chassidish';
-    else if (/heimish/.test(lower)) pseudo.hashkafa = 'Heimish';
-    else if (/modern orthodox|mo\b/.test(lower)) pseudo.hashkafa = 'Modern Orthodox';
-  }
-  if (/learner|learning|kollel|full-time|yungerman/.test(lower)) pseudo.role = 'Full-time learner';
-  else if (/learner-earner/.test(lower)) pseudo.role = 'Learner-earner';
-  else if (/work|job|professional|business|lawyer|doctor|med|account|finance|nurse|teacher|therapist/.test(lower)) pseudo.role = 'Working';
-  for (const loc of Object.keys(METRO)) {
-    const city = loc.split(',')[0].toLowerCase();
-    if (lower.includes(city)) { pseudo.location = loc; break; }
-  }
-  const weights = await getWeights();
-  const all = await storeAll('profiles');
-  const scored = all
-    .map(c => ({ c, s: scorePair(pseudo, c, weights) }))
-    .filter(x => x.s)
-    .sort((a, b) => b.s.total - a.s.total)
-    .slice(0, 3);
-  st.results = scored;
-  viewAsk();
-};
 
 /* ---- Share package ---- */
 const SHARE_FIELDS = [
@@ -1128,11 +926,8 @@ async function viewSettings() {
   app.innerHTML = `
     <h2>More</h2>
     <div class="card">
-      <h3 style="margin-top:0">Your feedback so far</h3>
-      ${fb.length === 0 ? '<p class="muted small">No feedback yet. On any profile, tap "Find" and mark suggestions as good ideas or not a fit.</p>' : `
-        <p class="small">You have given feedback on ${fb.length} suggestion${fb.length === 1 ? '' : 's'} (${no.length} declined).</p>
-        ${topTags.length ? `<p class="small">Reasons you decline most: ${topTags.map(([t, c]) => `${t} (${c})`).join(', ')}. Those factors now count more heavily.</p>` : ''}
-      `}
+      <h3 style="margin-top:0">Saved ideas</h3>
+      ${fb.filter(f => f.verdict === 'yes').length === 0 ? '<p class="muted small">None yet. On a profile, tap "Find", set filters, and tap "Save as idea" on a profile to keep it on that person\'s page.</p>' : `<p class="small">${fb.filter(f => f.verdict === 'yes').length} saved idea${fb.filter(f => f.verdict === 'yes').length === 1 ? '' : 's'}. They only appear on the profile page. They do not change any search.</p>`}
     </div>
     <div class="card">
       <h3 style="margin-top:0">Your data</h3>
@@ -1143,8 +938,8 @@ async function viewSettings() {
     </div>
     <div class="card">
       <h3 style="margin-top:0">What is real in this demo</h3>
-      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), rule-based match suggestions with reasons, your feedback teaching the matcher, share packages as files.</p>
-      <p class="small">Not connected yet: voice-to-text, AI summaries and AI matching, accounts, sharing directly between shadchanim inside the app. Those need the hosted version and are labeled wherever they appear.</p>
+      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters (age, learner, working or learning, town, city, hashkafa), a Find page that lists profiles by your filters, saved ideas, share packages as files.</p>
+      <p class="small">There is no AI anywhere in this app: no transcription, no summaries, no scoring or matching. Not connected yet: accounts and sending profiles directly between shadchanim inside the app. Those need the hosted version.</p>
       <p class="small muted">Fictional profiles only in this demo; browser storage has no backup. Real profiles come with the hosted, account-based version.</p>
     </div>
   `;
