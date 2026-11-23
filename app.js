@@ -492,7 +492,7 @@ async function viewForm(editId) {
       ${!editId ? `
       <div class="field">
         <span class="small" style="font-weight:600">Voice note (optional, private)</span>
-        <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. Turning what you say into filled-in fields comes later, with your review first.</div>
+        <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. It is kept as a recording for playback only and is not transcribed.</div>
         <div id="newAudioWrap"></div>
       </div>` : ''}
       <div class="btnrow">
