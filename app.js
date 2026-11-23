@@ -635,7 +635,7 @@ async function viewProfile(id) {
     </div>
     <div class="card">
       <div class="btnrow no-print" style="margin-top:0">
-        <a class="btn" href="#/match/${p.id}">Find ${p.gender === 'M' ? 'girls' : 'boys'} for ${esc(firstName(p))}</a>
+        ${(p.gender === 'M' || p.gender === 'F') ? `<a class="btn" href="#/match/${p.id}">Find ${p.gender === 'M' ? 'girls' : 'boys'} for ${esc(firstName(p))}</a>` : `<a class="btn ghost" href="#/edit/${p.id}">Set boy or girl to find matches</a>`}
         <a class="btn ghost" href="#/share/${p.id}">Share package</a>
       </div>
 
