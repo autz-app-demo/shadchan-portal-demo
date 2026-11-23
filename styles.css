@@ -384,3 +384,7 @@ label.field textarea{min-height:76px;resize:vertical}
 .sph{display:block;width:92px;height:92px;border-radius:12px;background-size:cover;background-position:center;background-color:#ddd;border:1px solid var(--line)}
 .sph.big{width:110px;height:110px}
 .sendval{word-break:break-word}
+/* Bottom nav: two items, kept together in the centre */
+#bottomnav{justify-content:center;gap:8px}
+#bottomnav a{flex:0 0 auto;width:112px;min-height:56px;justify-content:center;font-size:12px}
+@media(min-width:900px){#bottomnav a{width:130px;font-size:14px}}
