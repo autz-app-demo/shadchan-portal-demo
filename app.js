@@ -660,11 +660,10 @@ async function viewProfile(id) {
 
     <div class="card">
       <h3 style="margin-top:0">Profile synopsis</h3>
-      <p class="small muted">This is the shareable summary. It is part of the profile package you can share. AI auto-rewrite from your notes is not connected yet, so you edit it yourself.</p>
+      <p class="small muted">This is the shareable summary. It is part of the profile package you can share. You write and edit it yourself. Nothing is rewritten for you.</p>
       <textarea id="summaryBox" class="searchbar" style="min-height:90px">${esc(p.summary || '')}</textarea>
       <div class="btnrow">
         <button class="btn ghost" onclick="saveSummary('${p.id}')">Save synopsis</button>
-        <button class="btn disabled" disabled title="AI is not connected in this demo">Rewrite with AI (not connected yet)</button>
       </div>
     </div>
 
@@ -699,7 +698,7 @@ async function viewProfile(id) {
             <div class="when">${n.type === 'audio' ? 'Voice note' : 'Note'} &middot; ${fmtWhen(n.ts)}
               <a href="javascript:void 0" onclick="deleteNote('${n.id}','${p.id}')" style="float:right" class="muted">Delete</a>
             </div>
-            ${n.type === 'audio' ? `<audio controls id="aud-${n.id}"></audio><div class="small muted">Saved and playable here. Voice-to-text is not connected yet.</div>` : `<div>${esc(n.text)}</div>`}
+            ${n.type === 'audio' ? `<audio controls id="aud-${n.id}"></audio><div class="small muted">Saved and playable here. Voice notes are not transcribed.</div>` : `<div>${esc(n.text)}</div>`}
           </div>`).join('') || '<p class="muted small">No notes yet.</p>'}
       </div>
       <textarea id="noteText" class="searchbar" style="min-height:64px" placeholder="Type a private note..."></textarea>
@@ -848,7 +847,7 @@ async function viewAsk() {
         <button class="btn subtle" id="rec-ask" onclick="toggleRec('ask')">Record voice note</button>
       </div>
       <p class="small" style="margin-top:10px">Or ask a person instead of the matcher: <a href="#/requests">request profiles from another shadchan</a> - they pick profiles from their own list; you never see their whole database.</p>
-      <div class="small muted" id="askAudioNote">${window._askAudio ? 'A voice note is attached to this search below. ' : ''}Voice-to-text is not connected yet, so the suggestions use your typed description. In the full version the voice note itself will be understood.</div>
+      <div class="small muted" id="askAudioNote">${window._askAudio ? 'A voice note is attached to this search below. ' : ''}Voice notes are kept for playback only and are not transcribed. The suggestions use your typed description.</div>
       <div id="askAudioSlot">${window._askAudio ? '<audio controls id="askAudioPlayer"></audio>' : ''}</div>
     </div>
     ${resultsHTML}
