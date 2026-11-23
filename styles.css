@@ -399,3 +399,6 @@ label.field textarea{min-height:76px;resize:vertical}
 .notestatus.warn{background:#fee2e2;color:#991b1b;border-color:#991b1b}
 .notestatus.hide{display:none}
 #newNoteText{display:block;width:100%;box-sizing:border-box;min-height:64px}
+.gitem{display:flex;flex-direction:column;gap:6px}
+.gdel{padding:6px 8px;font-size:12px;min-height:0;box-shadow:none}
+.gitem .gthumb{width:100%}
