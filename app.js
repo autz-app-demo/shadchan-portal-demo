@@ -380,7 +380,7 @@ let _G = null; // gallery state for the open form or profile page
 function galUrl(rec) { if (!rec._url) rec._url = URL.createObjectURL(rec.blob); return rec._url; }
 function galStripHTML() {
   if (!_G) return '';
-  const items = _G.photos.map(r => `<button type="button" class="gthumb ${_G.chosenId === r.id ? 'chosen' : ''}" onclick="galPick('${r.id}')" aria-label="Photo ${esc(r.name || '')}"><img src="${galUrl(r)}" alt=""><span class="gtag">${_G.chosenId === r.id ? 'Profile picture' : ''}</span></button>`).join('');
+  const items = _G.photos.map(r => `<div class="gitem"><button type="button" class="gthumb ${_G.chosenId === r.id ? 'chosen' : ''}" onclick="galPick('${r.id}')" aria-label="Photo ${esc(r.name || '')}"><img src="${galUrl(r)}" alt=""><span class="gtag">${_G.chosenId === r.id ? 'Profile picture' : ''}</span></button><button type="button" class="btn danger gdel" onclick="galDelete('${r.id}')">Delete photo</button></div>`).join('');
   return items || '<div class="small muted">No photos yet. Add photos or take one.</div>';
 }
 function galRender() { const el = document.getElementById('galstrip'); if (el) el.innerHTML = galStripHTML(); const c = document.getElementById('galcount'); if (c) c.textContent = _G.photos.length ? '(' + _G.photos.length + ')' : ''; }
@@ -411,6 +411,25 @@ async function galAdd(files) {
   galRender();
   if (!_G.chosenId && added[0]) galPick(added[0].id);
 }
+window.galDelete = async function (id) {
+  const r = _G.photos.find(x => x.id === id); if (!r) return;
+  const isMain = _G.chosenId === id;
+  const msg = 'Delete this photo' + (r.name ? ' (' + r.name + ')' : '') + '? This cannot be undone.' + (isMain ? ' It is the current profile picture, so the profile picture will be cleared too.' : '') + ' Your other photos are not touched.';
+  if (!confirm(msg)) return;
+  try {
+    if (_G.profileId) await photoDel(id);
+    _G.photos = _G.photos.filter(x => x.id !== id);
+    if (window._send && window._send.sel) for (const k in window._send.sel) { const ph = window._send.sel[k].photos; if (ph) delete ph[id]; }
+    if (isMain) {
+      if (_G.editId) { const cur = await storeGet('profiles', _G.editId); if (cur) { delete cur.photo; delete cur.photoId; delete cur.photoCrop; await storePut('profiles', cur); } }
+      _G.chosenId = null; _G.croppedUrl = null; _G.crop = null;
+      const circle = document.getElementById('ppcircle');
+      if (circle) { circle.style.backgroundImage = ''; circle.classList.remove('hasimg'); circle.textContent = '+'; const h = document.getElementById('pphint'); if (h) h.textContent = 'Tap to add a profile photo'; }
+      if (document.getElementById('pgalcard')) { render(); return; }
+    }
+    galRender();
+  } catch (e) { alert('The photo could not be deleted. Nothing was changed. Please try again.'); }
+};
 window.galPick = function (id) { const r = _G.photos.find(x => x.id === id); if (r) openCrop(r); };
 function cropRect(st) { const side = st.vw / (st.s0 * st.z); st.cx = Math.min(Math.max(st.cx, side / 2), st.nw - side / 2); st.cy = Math.min(Math.max(st.cy, side / 2), st.nh - side / 2); return side; }
 function cropApply(st) {
