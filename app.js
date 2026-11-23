@@ -109,7 +109,8 @@ function heightText(p) {
   return p.height || '';
 }
 function nm(p) { return (p && p.name) || 'Unnamed profile'; }
-function ageSfx(p) { const a = ageFromDob(p.dob); return a != null ? ', ' + a : ''; }
+function ageOf(p) { const a = ageFromDob(p.dob); if (a != null) return a; const n = parseInt(p.ageEntered, 10); return (p.ageEntered !== undefined && p.ageEntered !== '' && n >= 0 && n < 130) ? n : null; }
+function ageSfx(p) { const a = ageOf(p); return a != null ? ', ' + a : ''; }
 function firstName(p) { return (p.name || 'this person').split(' ')[0]; }
 
 
@@ -256,7 +257,7 @@ async function render() {
 }
 
 let _plistFilter = 'all', _plistQ = '';
-let _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' }, _pfOpen = false;
+let _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', school: '' }, _pfOpen = false;
 const _pfActive = () => Object.values(_pf).filter(Boolean).length;
 async function viewProfiles() {
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -269,11 +270,14 @@ async function viewProfiles() {
     if (_pf.workType && p.workType !== _pf.workType) return false;
     if (_pf.town && p.town !== _pf.town) return false;
     if (_pf.ageMin !== '' || _pf.ageMax !== '') {
-      const ag = ageFromDob(p.dob);
+      const ag = ageOf(p);
       if (ag == null) return false;
       if (_pf.ageMin !== '' && ag < Number(_pf.ageMin)) return false;
       if (_pf.ageMax !== '' && ag > Number(_pf.ageMax)) return false;
     }
+    if (_pf.phoneType && p.phoneType !== _pf.phoneType) return false;
+    if (_pf.music && p.music !== _pf.music) return false;
+    if (_pf.school.trim() && !String(p.school || '').toLowerCase().includes(_pf.school.trim().toLowerCase())) return false;
     if (_pf.city.trim() && !String(p.location || '').toLowerCase().includes(_pf.city.trim().toLowerCase())) return false;
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
@@ -292,12 +296,15 @@ async function viewProfiles() {
         <label class="field">Working or learning<select onchange="pfSet('workType',this.value)"><option value="">Any</option>${['Working', 'Learning'].map(o => `<option ${_pf.workType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label class="field">In town<select onchange="pfSet('town',this.value)"><option value="">Any</option>${['In town', 'Out of town'].map(o => `<option ${_pf.town === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <div class="field"><span class="flabel">Age</span><div class="agerow"><input id="pfamin" type="number" inputmode="numeric" min="0" max="120" placeholder="Min" value="${esc(_pf.ageMin)}" oninput="pfAge('ageMin',this.value,'pfamin')"><span>to</span><input id="pfamax" type="number" inputmode="numeric" min="0" max="120" placeholder="Max" value="${esc(_pf.ageMax)}" oninput="pfAge('ageMax',this.value,'pfamax')"></div></div>
+        <label class="field">Phone<select onchange="pfSet('phoneType',this.value)"><option value="">Any</option>${['Flip phone', 'Smartphone'].map(o => `<option ${_pf.phoneType === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">Music<select onchange="pfSet('music',this.value)"><option value="">Any</option>${['Non-Jewish music', 'Only Jewish music'].map(o => `<option ${_pf.music === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">Yeshiva or school (typed)<input id="pfschool" value="${esc(_pf.school)}" placeholder="Any" oninput="pfSet('school',this.value,true)"></label>
         <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
       </div>
-      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Age comes from the date of birth. Profiles missing a detail are hidden while that filter is on.</div>
+      <div class="small muted">City is typed. It matches any part of "Where they live", so "Lake" finds Lakewood. Age comes from the date of birth, or from the age as entered when there is no date of birth. Profiles missing a detail are hidden while that filter is on.</div>
       ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
     </details>
-    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:'',ageMin:'',ageMax:''};plistFilter('all')">Show all</a></div>` : ''}
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',workType:'',town:'',city:'',ageMin:'',ageMax:'',phoneType:'',music:'',school:''};plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -314,29 +321,28 @@ async function viewProfiles() {
   `;
   document.getElementById('pq').addEventListener('input', e => { _plistQ = e.target.value; viewProfiles(); });
 }
-window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById('pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
+window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById(k === 'school' ? 'pfschool' : 'pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
 window.pfAge = function (k, v, id) { _pf[k] = v; viewProfiles().then(() => { const e = document.getElementById(id); if (e) { e.focus(); try { e.setSelectionRange(v.length, v.length); } catch (x) {} } }); };
 window.chipPick = function (btn, val) { const wrap = btn.closest('.chipfield'); const inp = wrap.querySelector('input[type=hidden]'); const off = inp.value === val; inp.value = off ? '' : val; wrap.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', !off && c.textContent === val)); };
-window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '' }; viewProfiles(); };
+window.pfClear = function () { _pf = { learnTerm: '', workType: '', town: '', city: '', ageMin: '', ageMax: '', phoneType: '', music: '', school: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
   ['name', 'Full name', 'text', false],
   ['gender', 'Boy or girl', 'select:This profile is a,Boy,Girl', false],
-  ['dob', 'Date of birth', 'date', false],
+  ['dob', 'Date of birth (age is worked out and keeps updating)', 'date', false],
+  ['ageEntered', 'Age (only if no date of birth; stays as entered)', 'number', false],
   ['heightFt', 'Height: feet', 'number', false],
   ['heightIn', 'Height: inches (0 to 11)', 'number', false],
   ['location', 'Where they live', 'text', false],
-  ['community', 'Community / neighborhood', 'text', false],
   ['hashkafa', 'Hashkafa', 'selecthashkafa', false],
-  ['role', 'What they do (learning / work)', 'text', false],
+  ['school', 'Yeshiva (boys) or school (girls)', 'text', false],
   ['workType', 'Working or learning', 'select:,Working,Learning', false],
   ['learnTerm', 'Learner', 'select:,Short-term learner,Long-term learner', false],
   ['town', 'In town or out of town', 'chips:In town,Out of town', false],
-  ['rav', 'Rav', 'text', false],
-  ['minyan', 'Minyan', 'text', false],
   ['koveaItim', 'Kovea itim', 'text', false],
-  ['music', 'Attitude to music', 'select:,Frum music only,Frum music,Jewish music,Chassidish music,Frum and pop,Open', false],
+  ['phoneType', 'Phone', 'select:,Flip phone,Smartphone', false],
+  ['music', 'Attitude to music', 'select:,Non-Jewish music,Only Jewish music', false],
   ['movies', 'Attitude to movies', 'select:,No,Rarely,Occasionally,Regularly', false],
   ['personality', 'Personality', 'textarea', false],
   ['family', 'Family background', 'textarea', false],
@@ -448,6 +454,7 @@ async function viewForm(editId) {
   if (editId && !p) { location.hash = '#/'; return; }
   const fields = PROFILE_FIELDS.map(([k, label, type, req]) => {
     const v = p[k] || '';
+    if (k === 'school') label = p.gender === 'M' ? 'Yeshiva' : p.gender === 'F' ? 'School' : label;
     if (k === 'heightIn') return '';
     if (k === 'heightFt') return `<div class="field heightrow"><div class="hlabel">Height</div><div class="hline"><label><input type="number" name="heightFt" inputmode="numeric" min="1" max="8" step="1" value="${esc(p.heightFt || '')}" aria-label="Height, feet"><span>ft</span></label><label><input type="number" name="heightIn" inputmode="numeric" min="0" max="11" step="1" value="${esc(p.heightIn || '')}" aria-label="Height, inches"><span>in</span></label></div></div>`;
     if (type === 'textarea') return `<label class="field">${label}<textarea name="${k}">${esc(v)}</textarea></label>`;
@@ -460,7 +467,8 @@ async function viewForm(editId) {
     }
     if (type.startsWith('select:')) {
       const opts = type.slice(7).split(',');
-      return `<label class="field">${label}<select name="${k}">${opts.map(o => {
+      const legacy = (v && k !== 'gender' && !opts.includes(v)) ? `<option value="${esc(v)}" selected>${esc(v)} (earlier answer)</option>` : '';
+      return `<label class="field">${label}<select name="${k}">${legacy}${opts.map(o => {
         const val = o === 'Boy' ? 'M' : o === 'Girl' ? 'F' : o;
         return `<option value="${esc(val)}" ${v === val ? 'selected' : ''}>${esc(o)}</option>`;
       }).join('')}</select></label>`;
@@ -506,6 +514,7 @@ async function viewForm(editId) {
   await galInit(p, editId);
   updateNewAudioWrap();
   ['fresume', 'fresumecam'].forEach(i => document.getElementById(i).addEventListener('change', e => { const f = e.target.files[0]; document.getElementById('fresumeName').textContent = f ? 'Attached: ' + f.name : ''; const o = document.getElementById(i === 'fresume' ? 'fresumecam' : 'fresume'); if (f) o.value = ''; }));
+  { const gs = document.querySelector('#pform [name=gender]'), sc = document.querySelector('#pform [name=school]'); if (gs && sc) gs.addEventListener('change', () => { const lb = sc.closest('label'); if (lb && lb.firstChild) lb.firstChild.nodeValue = gs.value === 'M' ? 'Yeshiva' : gs.value === 'F' ? 'School' : 'Yeshiva (boys) or school (girls)'; }); }
   document.getElementById('pform').addEventListener('submit', async e => {
     e.preventDefault();
     const form = e.target;
@@ -623,7 +632,7 @@ async function viewProfile(id) {
       ${illusOf(p) ? '<span class="illchip">Illustration, not a photo</span>' : ''}
       <div class="hoverlay">
         <div class="hname">${esc(nm(p))}</div>
-        <div class="hsub">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${ageFromDob(p.dob) != null ? ageFromDob(p.dob) + ' years old' : 'age not added'} &middot; ${esc(p.location || '')}</div>
+        <div class="hsub">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Profile'} &middot; ${ageOf(p) != null ? ageOf(p) + ' years old' : 'age not added'} &middot; ${esc(p.location || '')}</div>
         <div class="htagline"><span class="htag">${esc(p.hashkafa || '')}</span></div>
       </div>
     </div>
@@ -637,15 +646,15 @@ async function viewProfile(id) {
       <h3 style="margin-top:0">The basics</h3>
       <div class="kv">
         ${p.dob ? `<div class="k">Date of birth</div><div>${esc(p.dob)}</div>` : ''}
+        ${(!p.dob && p.ageEntered) ? `<div class="k">Age (as entered)</div><div>${esc(p.ageEntered)} (does not update)</div>` : ''}
         ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
-        ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
         ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
+        ${p.school ? `<div class="k">${p.gender === 'M' ? 'Yeshiva' : p.gender === 'F' ? 'School' : 'Yeshiva or school'}</div><div>${esc(p.school)}</div>` : ''}
         ${p.workType ? `<div class="k">Working or learning</div><div>${esc(p.workType)}</div>` : ''}
         ${p.learnTerm ? `<div class="k">Learner</div><div>${esc(p.learnTerm)}</div>` : ''}
         ${p.town ? `<div class="k">Town</div><div>${esc(p.town)}</div>` : ''}
-        ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
-        ${p.minyan ? `<div class="k">Minyan</div><div>${esc(p.minyan)}</div>` : ''}
         ${p.koveaItim ? `<div class="k">Kovea itim</div><div>${esc(p.koveaItim)}</div>` : ''}
+        ${p.phoneType ? `<div class="k">Phone</div><div>${esc(p.phoneType)}</div>` : ''}
         ${p.music ? `<div class="k">Music</div><div>${esc(p.music)}</div>` : ''}
         ${p.movies ? `<div class="k">Movies</div><div>${esc(p.movies)}</div>` : ''}
       </div>
@@ -801,7 +810,7 @@ async function viewSettings() {
     </div>
     <div class="card">
       <h3 style="margin-top:0">What is real in this demo</h3>
-      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters on the Profiles list (age, learner, working or learning, in town, city), and a Share package preview on each profile where you pick exactly what goes in.</p>
+      <p class="small">Working now: profiles, photos, resumes, typed and voice notes (voice plays back), photo gallery with cropping, filters on the Profiles list (age, learner, working or learning, in town, city, phone, music, yeshiva or school), and a Share package preview on each profile where you pick exactly what goes in.</p>
       <p class="small">There is no AI anywhere in this app: no transcription, no summaries, no scoring or matching. Not connected yet: accounts and sending profiles directly between shadchanim inside the app. Those need the hosted version.</p>
       <p class="small muted">Fictional profiles only in this demo; browser storage has no backup. Real profiles come with the hosted, account-based version.</p>
     </div>
@@ -838,16 +847,15 @@ function sendFields(p) {
   const f = [];
   const add = (k, label, val) => { if (val) f.push({ k, label, val: String(val) }); };
   add('name', 'Name', nm(p));
-  const a = ageFromDob(p.dob);
-  if (a != null) add('age', 'Age (from date of birth)', a);
+  const a = ageOf(p);
+  if (a != null) add('age', ageFromDob(p.dob) != null ? 'Age (from date of birth)' : 'Age (as entered, does not update)', a);
   add('dob', 'Date of birth', p.dob);
   add('height', 'Height', heightText(p));
   add('location', 'Where they live', p.location);
-  add('community', 'Community', p.community);
-  add('role', 'What they do', p.role);
   add('hashkafa', 'Hashkafa', p.hashkafa);
-  add('rav', 'Rav', p.rav);
+  add('school', p.gender === 'M' ? 'Yeshiva' : p.gender === 'F' ? 'School' : 'Yeshiva or school', p.school);
   add('koveaItim', 'Kovea itim', p.koveaItim);
+  add('phoneType', 'Phone', p.phoneType);
   add('movies', 'Movies', p.movies);
   add('music', 'Music', p.music);
   add('summary', 'Profile synopsis', p.summary);
