@@ -387,6 +387,8 @@ async function render() {
 }
 
 let _plistFilter = 'all', _plistQ = '';
+let _pf = { learnTerm: '', sect: '', town: '', city: '' }, _pfOpen = false;
+const _pfActive = () => Object.values(_pf).filter(Boolean).length;
 async function viewProfiles() {
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const q = _plistQ.toLowerCase();
@@ -394,6 +396,8 @@ async function viewProfiles() {
     if (_plistFilter === 'boys' && p.gender !== 'M') return false;
     if (_plistFilter === 'girls' && p.gender !== 'F') return false;
     if (_plistFilter === 'unset' && (p.gender === 'M' || p.gender === 'F')) return false;
+    if (_pf.learnTerm && p.learnTerm !== _pf.learnTerm) return false;
+    if (_pf.city.trim() && !String(p.location || '').toLowerCase().includes(_pf.city.trim().toLowerCase())) return false;
     if (q && !((p.name || '') + ' ' + (p.location || '') + ' ' + (p.hashkafa || '') + ' ' + (p.summary || '')).toLowerCase().includes(q)) return false;
     return true;
   });
@@ -405,7 +409,15 @@ async function viewProfiles() {
       <button class="chip ${_plistFilter === 'girls' ? 'on' : ''}" onclick="plistFilter('girls')">Girls (${profiles.filter(p => p.gender === 'F').length})</button>
       ${profiles.some(p => p.gender !== 'M' && p.gender !== 'F') ? `<button class="chip ${_plistFilter === 'unset' ? 'on' : ''}" onclick="plistFilter('unset')">Gender not set (${profiles.filter(p => p.gender !== 'M' && p.gender !== 'F').length})</button>` : ''}
     </div>
-    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';plistFilter('all')">Show all</a></div>` : ''}
+    <details class="filterbox" ${_pfOpen || _pfActive() ? 'open' : ''} ontoggle="_pfOpen=this.open"><summary>Filters${_pfActive() ? ` (${_pfActive()} on)` : ''}</summary>
+      <div class="filtergrid">
+        <label class="field">Learner<select onchange="pfSet('learnTerm',this.value)"><option value="">Any</option>${['Short-term learner', 'Long-term learner'].map(o => `<option ${_pf.learnTerm === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+        <label class="field">City (typed)<input id="pfcity" value="${esc(_pf.city)}" placeholder="Any city" autocapitalize="words" oninput="pfSet('city',this.value,true)"></label>
+      </div>
+      <div class="small muted">Profiles with a blank value are hidden while that filter is on. Nothing here is required on a profile. City matches the typed "Where they live" text exactly as written.</div>
+      ${_pfActive() ? '<button class="btn subtle" onclick="pfClear()">Clear filters</button>' : ''}
+    </details>
+    ${list.length < profiles.length ? `<div class="banner small">Showing ${list.length} of ${profiles.length} profiles. ${profiles.length - list.length} hidden by the filter or search. <a href="javascript:void(0)" onclick="_plistQ='';_pf={learnTerm:'',sect:'',town:'',city:''};plistFilter('all')">Show all</a></div>` : ''}
     <div class="pgrid">
     ${list.map(p => `
       <a class="ptile" href="#/profile/${p.id}">
@@ -422,6 +434,8 @@ async function viewProfiles() {
   `;
   document.getElementById('pq').addEventListener('input', e => { _plistQ = e.target.value; viewProfiles(); });
 }
+window.pfSet = function (k, v, keepFocus) { _pf[k] = v; viewProfiles().then(() => { if (keepFocus) { const e = document.getElementById('pfcity'); if (e) { e.focus(); e.setSelectionRange(v.length, v.length); } } }); };
+window.pfClear = function () { _pf = { learnTerm: '', sect: '', town: '', city: '' }; viewProfiles(); };
 window.plistFilter = function (f) { _plistFilter = f; viewProfiles(); };
 
 const PROFILE_FIELDS = [
@@ -434,6 +448,7 @@ const PROFILE_FIELDS = [
   ['community', 'Community / neighborhood', 'text', false],
   ['hashkafa', 'Hashkafa', 'selecthashkafa', false],
   ['role', 'What they do (learning / work)', 'text', false],
+  ['learnTerm', 'Learner', 'select:,Short-term learner,Long-term learner', false],
   ['rav', 'Rav', 'text', false],
   ['minyan', 'Minyan', 'text', false],
   ['koveaItim', 'Kovea itim', 'text', false],
@@ -644,6 +659,7 @@ async function viewProfile(id) {
         ${heightText(p) ? `<div class="k">Height</div><div>${esc(heightText(p))}</div>` : ''}
         ${p.community ? `<div class="k">Community</div><div>${esc(p.community)}</div>` : ''}
         ${p.role ? `<div class="k">What ${p.gender === 'M' ? 'he' : 'she'} does</div><div>${esc(p.role)}</div>` : ''}
+        ${p.learnTerm ? `<div class="k">Learner</div><div>${esc(p.learnTerm)}</div>` : ''}
         ${p.rav ? `<div class="k">Rav</div><div>${esc(p.rav)}</div>` : ''}
         ${p.minyan ? `<div class="k">Minyan</div><div>${esc(p.minyan)}</div>` : ''}
         ${p.koveaItim ? `<div class="k">Kovea itim</div><div>${esc(p.koveaItim)}</div>` : ''}
