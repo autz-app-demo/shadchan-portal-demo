@@ -340,7 +340,6 @@ const PROFILE_FIELDS = [
   ['workType', 'Working or learning', 'select:,Working,Learning', false],
   ['learnTerm', 'Learner', 'select:,Short-term learner,Long-term learner', false],
   ['town', 'In town or out of town', 'chips:In town,Out of town', false],
-  ['koveaItim', 'Kovea itim', 'text', false],
   ['phoneType', 'Phone', 'select:,Flip phone,Smartphone', false],
   ['music', 'Attitude to music', 'select:,Non-Jewish music,Only Jewish music', false],
   ['movies', 'Attitude to movies', 'select:,No,Rarely,Occasionally,Regularly', false],
@@ -380,7 +379,7 @@ function galControlsHTML() {
   return `<div class="galbox"><div class="galhead">Photos <span id="galcount" class="muted"></span></div>
     <div class="galbtns"><label class="btn subtle gbtn">Choose photos<input type="file" accept="image/*" multiple id="galfiles" hidden></label><label class="btn subtle gbtn">Take a photo<input type="file" accept="image/*" capture="environment" id="galcam" hidden></label></div>
     <div class="galstrip" id="galstrip"></div>
-    <div class="small muted">All photos stay here as you added them. Tap one to choose it as the profile picture and crop it. Photos are shared only when you tick them in Share package.</div></div>`;
+    <div class="small muted">All photos stay here as you added them. Tap one to choose it as the profile picture and crop it. Photos are shared only when you tick them in Share profile.</div></div>`;
 }
 async function galInit(p, editId) {
   _G = { profileId: editId || null, photos: [], chosenId: p.photoId || null, croppedUrl: null, crop: p.photoCrop || null, editId };
@@ -498,8 +497,9 @@ async function viewForm(editId) {
       </div>
       ${p.resumeName ? `<div class="small muted">A resume file is saved: ${esc(p.resumeName)}. Choosing a new one replaces it.</div>` : ''}
       ${!editId ? `
+      <label class="field privred"><span class="privlabel">Private notes (never shared)</span><textarea name="privNote" placeholder="Type a private note (optional)" class="privtext"></textarea></label>
       <div class="field">
-        <span class="small" style="font-weight:600">Voice note (optional, private)</span>
+        <span class="small privred" style="font-weight:600">Voice note (optional, private, never shared)</span>
         <div class="small muted" style="margin:2px 0 8px">Record while you add the person - it saves as a private note on the new profile. Private notes are never shared. It is kept as a recording for playback only and is not transcribed.</div>
         <div id="newAudioWrap"></div>
       </div>` : ''}
@@ -556,6 +556,7 @@ async function viewForm(editId) {
     try {
       await storePut('profiles', prof); _plistFilter = 'all'; _plistQ = '';
       if (!editId && _G) for (const r of _G.photos) await photoPut({ id: r.id, profileId: prof.id, blob: r.blob, mime: r.mime, name: r.name, ts: r.ts });
+      { const pn = String(fd.get('privNote') || '').trim(); if (pn && !editId) await storePut('notes', { id: uid(), profileId: prof.id, type: 'text', text: pn, ts: Date.now() }); }
       if (window._newAudio) {
         await storePut('notes', { id: uid(), profileId: prof.id, type: 'audio', blob: window._newAudio, mime: window._newAudio.type, ts: Date.now() });
         window._newAudio = null;
@@ -639,7 +640,7 @@ async function viewProfile(id) {
     <div class="card no-print" id="pgalcard"></div>
     <div class="card">
       <div class="btnrow no-print" style="margin-top:0">
-        <a class="btn ghost" href="#/share/${p.id}">Share package</a>
+        <a class="btn ghost" href="#/share/${p.id}">Share profile</a>
       </div>
 
     <div class="card">
@@ -652,7 +653,6 @@ async function viewProfile(id) {
         ${p.workType ? `<div class="k">Working or learning</div><div>${esc(p.workType)}</div>` : ''}
         ${p.learnTerm ? `<div class="k">Learner</div><div>${esc(p.learnTerm)}</div>` : ''}
         ${p.town ? `<div class="k">Town</div><div>${esc(p.town)}</div>` : ''}
-        ${p.koveaItim ? `<div class="k">Kovea itim</div><div>${esc(p.koveaItim)}</div>` : ''}
         ${p.phoneType ? `<div class="k">Phone</div><div>${esc(p.phoneType)}</div>` : ''}
         ${p.music ? `<div class="k">Music</div><div>${esc(p.music)}</div>` : ''}
         ${p.movies ? `<div class="k">Movies</div><div>${esc(p.movies)}</div>` : ''}
@@ -699,8 +699,8 @@ async function viewProfile(id) {
         </a>`).join('')}
     </div>` : ''}
 
-    <div class="card">
-      <h3 style="margin-top:0">Private notes <span class="small muted">(never shared)</span></h3>
+    <div class="card privred">
+      <h3 style="margin-top:0">Private notes <span class="small">(never shared)</span></h3>
       <div class="lockline">Private notes stay with you. They are never included in a shared package, an export, or any AI-generated shareable summary.</div>
       <div id="notesList">
         ${notes.map(n => `
@@ -708,7 +708,7 @@ async function viewProfile(id) {
             <div class="when">${n.type === 'audio' ? 'Voice note' : 'Note'} &middot; ${fmtWhen(n.ts)}
               <a href="javascript:void 0" onclick="deleteNote('${n.id}','${p.id}')" style="float:right" class="muted">Delete</a>
             </div>
-            ${n.type === 'audio' ? `<audio controls id="aud-${n.id}"></audio><div class="small muted">Saved and playable here. Voice notes are not transcribed.</div>` : `<div>${esc(n.text)}</div>`}
+            ${n.type === 'audio' ? `<audio controls id="aud-${n.id}"></audio><div class="small muted">Saved and playable here. Voice notes are not transcribed.</div>` : `<div class="privtext">${esc(n.text)}</div>`}
           </div>`).join('') || '<p class="muted small">No notes yet.</p>'}
       </div>
       <textarea id="noteText" class="searchbar" style="min-height:64px" placeholder="Type a private note..."></textarea>
@@ -848,13 +848,14 @@ function sendFields(p) {
   add('name', 'Name', nm(p));
   const a = ageOf(p);
   if (a != null) add('age', ageFromDob(p.dob) != null ? 'Age (from date of birth)' : 'Age (as entered, does not update)', a);
-  add('dob', 'Date of birth', p.dob);
   add('height', 'Height', heightText(p));
   add('location', 'Where they live', p.location);
   add('hashkafa', 'Hashkafa', p.hashkafa);
   add('school', p.gender === 'M' ? 'Yeshiva' : p.gender === 'F' ? 'School' : 'Yeshiva or school', p.school);
-  add('koveaItim', 'Kovea itim', p.koveaItim);
   add('phoneType', 'Phone', p.phoneType);
+  add('workType', 'Working or learning', p.workType);
+  add('learnTerm', 'Learner', p.learnTerm);
+  add('town', 'In town or out of town', p.town);
   add('movies', 'Movies', p.movies);
   add('music', 'Music', p.music);
   add('summary', 'Profile synopsis', p.summary);
@@ -865,6 +866,12 @@ function sendFields(p) {
   add('resumeName', 'Resume file: ' + (p.resumeName || ''), p.resumeName);
   return f;
 }
+const SEND_GROUPS = [
+  { id: 'details', label: 'Profile details', note: 'Everything on the profile except the synopsis and resume. Age is sent, not the date of birth.', keys: ['name', 'age', 'height', 'location', 'hashkafa', 'school', 'phoneType', 'workType', 'learnTerm', 'town', 'movies', 'music', 'lookingFor', 'personality', 'family'] },
+  { id: 'resume', label: 'Resume', note: 'The resume as saved.', keys: ['resumeText', 'resumeName'] },
+  { id: 'synopsis', label: 'Synopsis', note: 'The synopsis you wrote.', keys: ['summary'] }
+];
+function sendGroupKeys(p, g) { const have = new Set(sendFields(p).map(x => x.k)); return g.keys.filter(k => have.has(k)); }
 function sendSel(pid) { return window._send.sel[pid] = window._send.sel[pid] || { fields: {}, photos: {} }; }
 async function viewSend(presetId) {
   const S = window._send;
@@ -887,10 +894,9 @@ async function viewSend(presetId) {
         ${ph.map(r => `<label class="sphoto"><input type="checkbox" ${sel.photos[r.id] ? 'checked' : ''} onchange="sendTogglePhoto('${p.id}','${r.id}')"><span class="sph" style="background-image:url('${galUrl(r)}')"></span><span class="small">${esc(r.name || 'Photo')}</span></label>`).join('')}
         ${(!p.photo && !ph.length) ? '<span class="small muted">No photos on this profile.</span>' : ''}
       </div>
-      <div class="flabel" style="margin-top:12px">Details</div>
-      ${fields.map(x => `<label class="sharefield"><input type="checkbox" ${sel.fields[x.k] ? 'checked' : ''} onchange="sendToggleField('${p.id}','${x.k}')"><div>${esc(x.label)}<div class="small muted sendval">${esc(x.k === 'resumeName' ? '' : x.val.length > 90 ? x.val.slice(0, 90) + '...' : x.val)}</div></div></label>`).join('')}
-      <div class="btnrow"><button class="btn ghost" onclick="sendAll('${p.id}',true)">Tick everything shareable</button><button class="btn ghost" onclick="sendAll('${p.id}',false)">Clear ticks</button></div>
-      <div class="lockline">Private notes are not an option here. They never go in a send.</div>
+      ${SEND_GROUPS.map(g => { const ks = sendGroupKeys(p, g); if (!ks.length) return ''; const on = ks.every(k => sel.fields[k]); const labels = fields.filter(x => ks.includes(x.k)).map(x => x.label.replace(/^Resume file:.*/, 'Resume file')).join(', '); return `<label class="sharefield"><input type="checkbox" ${on ? 'checked' : ''} onchange="sendToggleGroup('${p.id}','${g.id}')"><div>${esc(g.label)}<div class="small muted sendval">${esc(g.note)}</div><div class="small muted sendval">${esc(labels)}</div></div></label>`; }).join('')}
+      <div class="btnrow"><button class="btn ghost" onclick="sendAll('${p.id}',true)">Tick everything</button><button class="btn ghost" onclick="sendAll('${p.id}',false)">Clear ticks</button></div>
+      <div class="lockline">Private notes have no option. They are never shared.</div>
     </div>`;
   }
   let prev = '';
@@ -913,7 +919,7 @@ async function viewSend(presetId) {
   }
   const scrollY = window.scrollY;
   app.innerHTML = `
-    <h2>Share package</h2>
+    <h2>Share profile</h2>
     <div class="banner warn">Preview only. This demo is one browser and cannot deliver anything. Real sending needs the account version, where each shadchan has a private login and their own list.</div>
     <div class="card">
       <div class="flabel">1. Who to send to</div>
@@ -934,13 +940,14 @@ async function viewSend(presetId) {
 window.sendSearch = function (v) { window._send.q = v; window._sendFocus = true; viewSend(); };
 window.sendPickTo = function (i) { window._sendFocus = false; window._send.to = i === null ? null : SAMPLE_SHADCHANIM[i]; if (i === null) window._send.q = ''; viewSend(); };
 window.sendTogglePick = function (id) { window._sendFocus = false; window._send.picked[id] = !window._send.picked[id]; viewSend(); };
+window.sendToggleGroup = function (pid, gid) { window._sendFocus = false; storeGet('profiles', pid).then(p => { const g = SEND_GROUPS.find(x => x.id === gid); const s = sendSel(pid); const ks = sendGroupKeys(p, g); const on = !ks.every(k => s.fields[k]); for (const k of ks) s.fields[k] = on; viewSend(); }); };
 window.sendToggleField = function (pid, k) { window._sendFocus = false; const s = sendSel(pid); s.fields[k] = !s.fields[k]; viewSend(); };
 window.sendTogglePhoto = function (pid, k) { window._sendFocus = false; const s = sendSel(pid); s.photos[k] = !s.photos[k]; viewSend(); };
 window.sendAll = async function (pid, on) {
   window._sendFocus = false;
   const p = await storeGet('profiles', pid); const s = sendSel(pid);
   s.fields = {}; s.photos = {};
-  if (on) { for (const x of sendFields(p)) s.fields[x.k] = true; if (p.photo) s.photos['_crop'] = true; for (const r of await photosOf(pid)) s.photos[r.id] = true; }
+  if (on) { for (const g of SEND_GROUPS) for (const k of sendGroupKeys(p, g)) s.fields[k] = true; if (p.photo) s.photos['_crop'] = true; for (const r of await photosOf(pid)) s.photos[r.id] = true; }
   viewSend();
 };
 
