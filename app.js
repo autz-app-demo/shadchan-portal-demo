@@ -869,9 +869,8 @@ function sendFields(p) {
   return f;
 }
 const SEND_GROUPS = [
-  { id: 'details', label: 'Profile details', note: 'Everything on the profile except the synopsis and resume. Age is sent, not the date of birth.', keys: ['name', 'age', 'height', 'location', 'hashkafa', 'school', 'phoneType', 'workType', 'learnTerm', 'town', 'movies', 'music', 'lookingFor', 'personality', 'family'] },
-  { id: 'resume', label: 'Resume', note: 'The resume as saved.', keys: ['resumeText', 'resumeName'] },
-  { id: 'synopsis', label: 'Synopsis', note: 'The synopsis you wrote.', keys: ['summary'] }
+  { id: 'details', label: 'Profile', note: 'Everything on the profile, including the synopsis, personality and background. Age is sent, not the date of birth. Private notes are never included.', keys: ['name', 'age', 'height', 'location', 'hashkafa', 'school', 'phoneType', 'workType', 'learnTerm', 'town', 'movies', 'music', 'lookingFor', 'personality', 'family', 'summary'] },
+  { id: 'resume', label: 'Resume', note: 'The resume as saved.', keys: ['resumeText', 'resumeName'] }
 ];
 function sendGroupKeys(p, g) { const have = new Set(sendFields(p).map(x => x.k)); return g.keys.filter(k => have.has(k)); }
 function sendSel(pid) { return window._send.sel[pid] = window._send.sel[pid] || { fields: {}, photos: {} }; }
@@ -890,13 +889,13 @@ async function viewSend(presetId) {
     detail += `<div class="card sendcard">
       <div class="sendhead">${avatarHTML(p)}<div><b>${esc(nm(p))}</b><div class="small muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : 'Gender not set'}</div></div></div>
       <div class="small muted" style="margin:8px 0">Nothing is ticked until you tick it.</div>
-      <div class="flabel">Photos</div>
+      ${SEND_GROUPS.map(g => { const ks = sendGroupKeys(p, g); if (!ks.length) return ''; const on = ks.every(k => sel.fields[k]); const labels = fields.filter(x => ks.includes(x.k)).map(x => x.label.replace(/^Resume file:.*/, 'Resume file')).join(', '); return `<label class="sharefield"><input type="checkbox" ${on ? 'checked' : ''} onchange="sendToggleGroup('${p.id}','${g.id}')"><div>${esc(g.label)}<div class="small muted sendval">${esc(g.note)}</div><div class="small muted sendval">${esc(labels)}</div></div></label>`; }).join('')}
+      <div class="flabel" style="margin-top:12px">Pictures (tick the ones to include)</div>
       <div class="sendphotos">
         ${p.photo ? `<label class="sphoto"><input type="checkbox" ${sel.photos['_crop'] ? 'checked' : ''} onchange="sendTogglePhoto('${p.id}','_crop')"><span class="sph" style="background-image:url('${p.photo}')"></span><span class="small">Profile picture (cropped)</span></label>` : ''}
         ${ph.map(r => `<label class="sphoto"><input type="checkbox" ${sel.photos[r.id] ? 'checked' : ''} onchange="sendTogglePhoto('${p.id}','${r.id}')"><span class="sph" style="background-image:url('${galUrl(r)}')"></span><span class="small">${esc(r.name || 'Photo')}</span></label>`).join('')}
         ${(!p.photo && !ph.length) ? '<span class="small muted">No photos on this profile.</span>' : ''}
       </div>
-      ${SEND_GROUPS.map(g => { const ks = sendGroupKeys(p, g); if (!ks.length) return ''; const on = ks.every(k => sel.fields[k]); const labels = fields.filter(x => ks.includes(x.k)).map(x => x.label.replace(/^Resume file:.*/, 'Resume file')).join(', '); return `<label class="sharefield"><input type="checkbox" ${on ? 'checked' : ''} onchange="sendToggleGroup('${p.id}','${g.id}')"><div>${esc(g.label)}<div class="small muted sendval">${esc(g.note)}</div><div class="small muted sendval">${esc(labels)}</div></div></label>`; }).join('')}
       <div class="btnrow"><button class="btn ghost" onclick="sendAll('${p.id}',true)">Tick everything</button><button class="btn ghost" onclick="sendAll('${p.id}',false)">Clear ticks</button></div>
       <div class="lockline">Private notes have no option. They are never shared.</div>
     </div>`;
