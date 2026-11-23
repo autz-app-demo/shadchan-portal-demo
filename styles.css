@@ -388,3 +388,4 @@ label.field textarea{min-height:76px;resize:vertical}
 #bottomnav{justify-content:center;gap:8px}
 #bottomnav a{flex:0 0 auto;width:112px;min-height:56px;justify-content:center;font-size:12px}
 @media(min-width:900px){#bottomnav a{width:130px;font-size:14px}}
+.illchip{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;letter-spacing:.2px;z-index:2}
