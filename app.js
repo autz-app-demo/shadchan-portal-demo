@@ -855,7 +855,7 @@ function sendFields(p) {
 function sendSel(pid) { return window._send.sel[pid] = window._send.sel[pid] || { fields: {}, photos: {} }; }
 async function viewSend(presetId) {
   const S = window._send;
-  if (presetId) { S.back = presetId; if (!S.picked[presetId]) S.picked[presetId] = true; }
+  if (presetId && S.back !== presetId) { S.back = presetId; S.picked = { [presetId]: true }; S.sel = {}; }
   const profiles = (await storeAll('profiles')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const qy = (S.q || '').toLowerCase();
   const matches = S.to ? [] : SAMPLE_SHADCHANIM.filter(n => !qy || n.toLowerCase().includes(qy));
@@ -909,11 +909,7 @@ async function viewSend(presetId) {
         <div class="senddrop">${matches.map((n, i) => `<button class="senditem" onclick="sendPickTo(${SAMPLE_SHADCHANIM.indexOf(n)})">${esc(n)}</button>`).join('') || '<div class="small muted" style="padding:10px">No match.</div>'}</div>
         <div class="small muted">These six are made-up sample names so you can try the search. No real shadchan is listed in this demo.</div>`}
     </div>
-    <div class="card">
-      <div class="flabel">2. Which profiles</div>
-      ${profiles.map(p => `<label class="sharefield"><input type="checkbox" ${S.picked[p.id] ? 'checked' : ''} onchange="sendTogglePick('${p.id}')"><div>${esc(nm(p))}<div class="small muted">${p.gender === 'M' ? 'Boy' : p.gender === 'F' ? 'Girl' : ''}${p.location ? ' &middot; ' + esc(p.location) : ''}</div></div></label>`).join('') || '<p class="muted">No profiles yet.</p>'}
-    </div>
-    ${pickedProfiles.length ? `<div class="flabel" style="margin:12px 0 4px">3. Exactly what goes in, per profile</div>` + detail : ''}
+    ${pickedProfiles.length ? `<div class="flabel" style="margin:12px 0 4px">2. Exactly what goes in</div>` + detail : ''}
     ${prev}
     <button class="btn disabled" disabled>Share (needs the account version, not connected)</button>
     <p><a class="btn subtle" href="#/${S.back ? 'profile/' + S.back : ''}">Back</a></p>
