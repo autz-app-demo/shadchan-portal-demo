@@ -297,3 +297,5 @@ label.field textarea{min-height:76px;resize:vertical}
 .field-missing input,.field-missing select,.field-missing textarea{border-color:#c0392b !important;outline:2px solid rgba(192,57,43,.22)}
 .newaudio{display:flex;flex-direction:column;gap:8px}
 .newaudio audio{width:100%;height:40px}
+
+.field, #formMissing { scroll-margin-top: 84px; }
